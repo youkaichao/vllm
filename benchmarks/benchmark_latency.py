@@ -43,7 +43,6 @@ def main(args: argparse.Namespace):
     dummy_prompt_token_ids = np.random.randint(10000,
                                                size=(args.batch_size,
                                                      args.input_len))
-    dummy_prompt_token_ids = dummy_prompt_token_ids.tolist()
 
     def run_to_completion(profile_dir: Optional[str] = None):
         if profile_dir:
