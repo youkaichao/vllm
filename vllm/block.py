@@ -17,27 +17,27 @@ LOGICAL_TOKEN_BLOCK_META_SIZE = 3
 @njit
 def numba_initialize_block(block_number, block_size):
     total_size = block_size + LOGICAL_TOKEN_BLOCK_META_SIZE
-    block = np.full(total_size, _BLANK_TOKEN_ID, dtype=np.int32)
+    block = np.full(total_size, _BLANK_TOKEN_ID, dtype=np.int64)
     block[0] = block_number  # block_number
     block[1] = block_size  # block_size
     block[2] = 0  # num_tokens
     return block
-numba_initialize_block = numba_initialize_block.compile((types.int32, types.int32))
+numba_initialize_block = numba_initialize_block.compile((types.int64, types.int64))
 
 @njit
 def numba_is_empty(block):
     return block[2] == 0  # num_tokens is at index 2
-numba_is_empty = numba_is_empty.compile((types.Array(types.int32, 1, 'C'),))
+numba_is_empty = numba_is_empty.compile((types.Array(types.int64, 1, 'C'),))
 
 @njit
 def numba_get_num_empty_slots(block):
     return block[1] - block[2]  # block_size - num_tokens
-numba_get_num_empty_slots = numba_get_num_empty_slots.compile((types.Array(types.int32, 1, 'C'),))
+numba_get_num_empty_slots = numba_get_num_empty_slots.compile((types.Array(types.int64, 1, 'C'),))
 
 @njit
 def numba_is_full(block):
     return block[2] == block[1]  # num_tokens == block_size
-numba_is_full = numba_is_full.compile((types.Array(types.int32, 1, 'C'),))
+numba_is_full = numba_is_full.compile((types.Array(types.int64, 1, 'C'),))
 
 @njit
 def numba_append_tokens(block, token_ids):
@@ -49,7 +49,7 @@ def numba_append_tokens(block, token_ids):
     for i in range(num_to_append):
         block[LOGICAL_TOKEN_BLOCK_META_SIZE + num_tokens + i] = token_ids[i]
     block[2] += num_to_append  # Update num_tokens
-numba_append_tokens = numba_append_tokens.compile((types.Array(types.int32, 1, 'C'), types.Array(types.int32, 1, 'C')))
+numba_append_tokens = numba_append_tokens.compile((types.Array(types.int64, 1, 'C'), types.Array(types.int64, 1, 'C')))
 
 @njit
 def numba_append_single_token(block, token_id):
@@ -59,7 +59,7 @@ def numba_append_single_token(block, token_id):
     assert num_to_append <= block_size - num_tokens
     block[LOGICAL_TOKEN_BLOCK_META_SIZE + num_tokens] = token_id
     block[2] += num_to_append  # Update num_tokens
-numba_append_single_token = numba_append_single_token.compile((types.Array(types.int32, 1, 'C'), types.int32))
+numba_append_single_token = numba_append_single_token.compile((types.Array(types.int64, 1, 'C'), types.int64))
 
 
 @njit
@@ -67,14 +67,14 @@ def numba_get_token_ids(block):
     num_tokens = block[2]
     return block[LOGICAL_TOKEN_BLOCK_META_SIZE:LOGICAL_TOKEN_BLOCK_META_SIZE +
                  num_tokens]
-numba_get_token_ids = numba_get_token_ids.compile((types.Array(types.int32, 1, 'C'),))
+numba_get_token_ids = numba_get_token_ids.compile((types.Array(types.int64, 1, 'C'),))
 
 @njit
 def numba_get_last_token_id(block):
     num_tokens = block[2]
     assert num_tokens > 0
     return block[LOGICAL_TOKEN_BLOCK_META_SIZE + num_tokens - 1]
-numba_get_last_token_id = numba_get_last_token_id.compile((types.Array(types.int32, 1, 'C'),))
+numba_get_last_token_id = numba_get_last_token_id.compile((types.Array(types.int64, 1, 'C'),))
 
 class LogicalTokenBlock:
     """A block that stores a contiguous chunk of tokens from left to right.
