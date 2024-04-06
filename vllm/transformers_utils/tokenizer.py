@@ -45,6 +45,9 @@ def get_cached_tokenizer(
         def __len__(self):
             return tokenizer_len
 
+        def encode(self, *args, **kwargs):
+            return self.encode(*args, **kwargs, return_tensors="np")
+
     CachedTokenizer.__name__ = f"Cached{tokenizer.__class__.__name__}"
 
     tokenizer.__class__ = CachedTokenizer
