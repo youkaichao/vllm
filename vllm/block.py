@@ -1,11 +1,67 @@
 """Token blocks."""
 from typing import List
 
+import numpy as np
+from numba import njit
+
 from vllm.utils import Device
 
 _BLANK_TOKEN_ID = -1
 
 DEFAULT_LAST_ACCESSED_TIME = -1
+
+# Number of slots reserved for metadata in a logical block
+LOGICAL_TOKEN_BLOCK_META_SIZE = 3
+
+
+@njit
+def numba_initialize_block(block_number, block_size):
+    total_size = block_size + LOGICAL_TOKEN_BLOCK_META_SIZE
+    block = np.full(total_size, _BLANK_TOKEN_ID, dtype=np.int32)
+    block[0] = block_number  # block_number
+    block[1] = block_size  # block_size
+    block[2] = 0  # num_tokens
+    return block
+
+
+@njit
+def numba_is_empty(block):
+    return block[2] == 0  # num_tokens is at index 2
+
+
+@njit
+def numba_get_num_empty_slots(block):
+    return block[1] - block[2]  # block_size - num_tokens
+
+
+@njit
+def numba_is_full(block):
+    return block[2] == block[1]  # num_tokens == block_size
+
+
+@njit
+def numba_append_tokens(block, token_ids):
+    num_tokens = block[2]
+    block_size = block[1]
+    num_to_append = len(token_ids)
+    assert num_to_append <= block_size - num_tokens
+    start_idx = LOGICAL_TOKEN_BLOCK_META_SIZE + num_tokens
+    block[start_idx:start_idx + num_to_append] = token_ids
+    block[2] += num_to_append  # Update num_tokens
+
+
+@njit
+def numba_get_token_ids(block):
+    num_tokens = block[2]
+    return block[LOGICAL_TOKEN_BLOCK_META_SIZE:LOGICAL_TOKEN_BLOCK_META_SIZE +
+                 num_tokens]
+
+
+@njit
+def numba_get_last_token_id(block):
+    num_tokens = block[2]
+    assert num_tokens > 0
+    return block[LOGICAL_TOKEN_BLOCK_META_SIZE + num_tokens - 1]
 
 
 class LogicalTokenBlock:
@@ -20,33 +76,25 @@ class LogicalTokenBlock:
         block_number: int,
         block_size: int,
     ) -> None:
-        self.block_number = block_number
-        self.block_size = block_size
-
-        self.token_ids = [_BLANK_TOKEN_ID] * block_size
-        self.num_tokens = 0
+        self.data = numba_initialize_block(block_number, block_size)
 
     def is_empty(self) -> bool:
-        return self.num_tokens == 0
+        return numba_is_empty(self.data)
 
     def get_num_empty_slots(self) -> int:
-        return self.block_size - self.num_tokens
+        return numba_get_num_empty_slots(self.data)
 
     def is_full(self) -> bool:
-        return self.num_tokens == self.block_size
+        return numba_is_full(self.data)
 
     def append_tokens(self, token_ids: List[int]) -> None:
-        assert len(token_ids) <= self.get_num_empty_slots()
-        curr_idx = self.num_tokens
-        self.token_ids[curr_idx:curr_idx + len(token_ids)] = token_ids
-        self.num_tokens += len(token_ids)
+        numba_append_tokens(self.data, token_ids)
 
     def get_token_ids(self) -> List[int]:
-        return self.token_ids[:self.num_tokens]
+        return numba_get_token_ids(self.data)
 
     def get_last_token_id(self) -> int:
-        assert self.num_tokens > 0
-        return self.token_ids[self.num_tokens - 1]
+        return numba_get_last_token_id(self.data)
 
 
 class PhysicalTokenBlock:
