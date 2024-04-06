@@ -275,13 +275,25 @@ class Sequence:
                                                num_empty_slots])
             cursor += num_empty_slots
 
+    def _append_single_token_to_blocks(self, token_id: int) -> None:
+        # shortcut execution path for the common case
+        if not self.logical_token_blocks:
+            self._append_logical_block()
+
+        last_block = self.logical_token_blocks[-1]
+        if last_block.is_full():
+            self._append_logical_block()
+            last_block = self.logical_token_blocks[-1]
+
+        last_block.append_single_token(token_id)
+
     def append_token_id(
         self,
         token_id: int,
         logprobs: Dict[int, Logprob],
     ) -> None:
         assert token_id in logprobs
-        self._append_tokens_to_blocks([token_id])
+        self._append_single_token_to_blocks(token_id)
         self.output_logprobs.append(logprobs)
         self.data.append_token_id(token_id, logprobs[token_id].logprob)
 
