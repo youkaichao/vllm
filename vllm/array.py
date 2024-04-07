@@ -131,6 +131,17 @@ numba_get_item = numba_get_item.compile((types.Array(numba_dtype, 1,
 
 
 @njit
+def numba_get_slice(data, start, stop):
+    META_SIZE = data[2]
+    return data[N_RESERVED + META_SIZE + 1 + start:N_RESERVED + META_SIZE + 1 +
+                stop]
+
+
+numba_get_slice = numba_get_slice.compile(
+    (types.Array(numba_dtype, 1, 'C'), numba_dtype, numba_dtype))
+
+
+@njit
 def numba_set_item(data, idx, item):
     num_elements = data[1]
     META_SIZE = data[2]
@@ -212,6 +223,8 @@ class VarLenArray:
         numba_append(self.data, item)
 
     def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return numba_get_slice(self.data, idx.start, idx.stop)
         return numba_get_item(self.data, idx)
 
     def __setitem__(self, idx, item):

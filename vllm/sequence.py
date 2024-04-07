@@ -2,6 +2,7 @@
 import copy
 import enum
 from dataclasses import dataclass
+import numpy as np
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from vllm.array import VarLenArray
@@ -135,6 +136,21 @@ class SequenceData:
 
     def get_output_len(self) -> int:
         return len(self.output_token_ids)
+
+    def __getitem__(self, idx: slice) -> int:
+        prompt_len = len(self.prompt_token_ids)
+        if idx.stop <= prompt_len:
+            return self.prompt_token_ids[idx]
+        if idx.start >= prompt_len:
+            idx.start -= prompt_len
+            idx.stop -= prompt_len
+            return self.output_token_ids[idx]
+        # The slice spans both prompt and output.
+        idx.stop -= prompt_len
+        return np.concat([
+            self.prompt_token_ids[idx.start:],
+            self.output_token_ids[0:idx.stop]
+        ])
 
     def get_token_ids(self) -> List[int]:
         return self.output_token_ids.concat(self.prompt_token_ids)

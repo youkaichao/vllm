@@ -60,3 +60,4 @@ def test_var_len_array():
     assert vla.concat(np.array([10, 11, 12
                                 ])).tolist() == [10, 11, 12, 0, 2, 3, 8, 6, 9]
     assert vla.to_array().tolist() == [0, 2, 3, 8, 6, 9]
+    assert vla[2:4].tolist() == [3, 8]

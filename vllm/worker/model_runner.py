@@ -193,7 +193,7 @@ class ModelRunner:
             prefill_end = min(seq_data.get_len(),
                               computed_len + token_chunk_size)
             # TODO(sang): Rename it after chunked prefill is introduced.
-            prompt_tokens = seq_data.get_token_ids()[computed_len:prefill_end]
+            prompt_tokens = seq_data[computed_len:prefill_end]
             prompt_len = len(prompt_tokens)
             # Right now, the prefill_end is always same as the length of
             # sequence. However, once chunked prefill is introduced, this
