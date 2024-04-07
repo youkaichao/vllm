@@ -102,6 +102,12 @@ def numba_to_array(data):
     return data[start: start + num_elements]
 numba_to_array = numba_to_array.compile((types.Array(numba_dtype, 1, 'C'),))
 
+@njit
+def numba_len(data):
+    return data[1]
+numba_len = numba_len.compile((types.Array(numba_dtype, 1, 'C'),))
+
+
 class VarLenArray:
     def __init__(self, max_size, META_SIZE=0):
         self.META_SIZE = META_SIZE
@@ -136,3 +142,6 @@ class VarLenArray:
 
     def to_array(self):
         return numba_to_array(self.data)
+
+    def __len__(self):
+        return numba_len(self.data)
