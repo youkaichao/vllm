@@ -1026,6 +1026,6 @@ def _prepare_fake_inputs(
             data=torch.zeros(vision_language_config.image_input_shape,
                              dtype=torch.float16))
     else:
-        prompt_tokens = [0] * seq_len
+        prompt_tokens = np.zeros((seq_len,), dtype=np.int64)
         fake_image_input = None
     return SequenceData(prompt_tokens), fake_image_input
