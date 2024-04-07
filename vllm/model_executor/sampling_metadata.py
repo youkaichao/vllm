@@ -276,13 +276,13 @@ class SamplingTensors:
             pin_memory=pin_memory,
         )
         prompt_tensor = torch.tensor(
-            np.array(prompt_padded_tokens),
+            torch.from_numpy(np.array(prompt_padded_tokens)),
             device="cpu",
             dtype=torch.long,
             pin_memory=pin_memory,
         )
         output_tensor = torch.tensor(
-            np.array(output_padded_tokens),
+            torch.from_numpy(np.array(output_padded_tokens)),
             device="cpu",
             dtype=torch.long,
             pin_memory=pin_memory,
