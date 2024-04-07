@@ -275,18 +275,10 @@ class SamplingTensors:
             dtype=torch.long,
             pin_memory=pin_memory,
         )
-        prompt_tensor = torch.tensor(
-            torch.from_numpy(np.array(prompt_padded_tokens)),
-            device="cpu",
-            dtype=torch.long,
-            pin_memory=pin_memory,
-        )
-        output_tensor = torch.tensor(
-            torch.from_numpy(np.array(output_padded_tokens)),
-            device="cpu",
-            dtype=torch.long,
-            pin_memory=pin_memory,
-        )
+        prompt_tensor = torch.from_numpy(
+            np.array(prompt_padded_tokens)).to(dtype=torch.long).pin_memory()
+        output_tensor = torch.from_numpy(
+            np.array(output_padded_tokens)).to(dtype=torch.long).pin_memory()
         # need to transpose and make contiguous to
         # copy the tensor correctly.
         # [batch_size, n_seeds] -> [n_seeds, batch_size]
