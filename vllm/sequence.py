@@ -4,8 +4,8 @@ import enum
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
-from vllm.block import LogicalTokenBlock
 from vllm.array import VarLenArray
+from vllm.block import LogicalTokenBlock
 from vllm.lora.request import LoRARequest
 from vllm.sampling_params import SamplingParams
 

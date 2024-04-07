@@ -2,8 +2,8 @@ import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-import torch
 import numpy as np
+import torch
 
 from vllm.model_executor.layers.ops.sample import get_num_triton_sampler_splits
 from vllm.sampling_params import SamplingParams, SamplingType
@@ -218,15 +218,13 @@ class SamplingTensors:
         prompt_padded_tokens = [
             np.pad(tokens, (0, prompt_max_len - len(tokens)),
                    mode="constant",
-                   constant_values=vocab_size)
-            for tokens in prompt_tokens
+                   constant_values=vocab_size) for tokens in prompt_tokens
         ]
         output_max_len = max(len(tokens) for tokens in output_tokens)
         output_padded_tokens = [
             np.pad(tokens, (0, output_max_len - len(tokens)),
                    mode="constant",
-                   constant_values=vocab_size)
-            for tokens in output_tokens
+                   constant_values=vocab_size) for tokens in output_tokens
         ]
 
         temperatures_t = torch.tensor(
