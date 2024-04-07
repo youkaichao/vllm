@@ -77,6 +77,31 @@ numba_extend = numba_extend.compile(
 
 
 @njit
+def numba_concat(elements, data):
+    # `elements` is a full array
+    # return a new array
+    # useful to concat prompt (which does not change) and output_ids which changes
+    elements_len = len(elements)
+    max_size = data[0]
+    num_elements = data[1]
+    META_SIZE = data[2]
+    output = np.empty((elements_len + num_elements, ), dtype=np_dtype)
+    # numba will optimize this loop
+    for i in range(elements_len):
+        output[i] = elements[i]
+    # numba will optimize this loop
+    start = N_RESERVED + META_SIZE + 1
+    for i in range(num_elements):
+        output[elements_len + i] = data[start + i]
+    return output
+
+
+numba_concat = numba_concat.compile(
+    (types.Array(numba_dtype, 1, 'C'), types.Array(numba_dtype, 1, 'C')))
+
+
+
+@njit
 def numba_append(data, item):
     max_size = data[0]
     num_elements = data[1]
@@ -179,6 +204,10 @@ class VarLenArray:
 
     def extend(self, elements):
         numba_extend(self.data, elements)
+
+    def concat(self, elements):
+        # note: extend is inplace, concat is not
+        return numba_concat(elements, self.data)
 
     def append(self, item):
         numba_append(self.data, item)
