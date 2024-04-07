@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from vllm.block import LogicalTokenBlock
+from vllm.array import VarLenArray
 from vllm.lora.request import LoRARequest
 from vllm.sampling_params import SamplingParams
 
@@ -113,7 +114,7 @@ class SequenceData:
         output_token_ids: Optional[List[int]] = None,
     ) -> None:
         if output_token_ids is None:
-            output_token_ids = []
+            output_token_ids = VarLenArray(2048)
 
         self.prompt_token_ids = prompt_token_ids
         self.output_token_ids = output_token_ids
@@ -136,7 +137,7 @@ class SequenceData:
         return len(self.output_token_ids)
 
     def get_token_ids(self) -> List[int]:
-        return self.prompt_token_ids + self.output_token_ids
+        return self.output_token_ids.concat(self.prompt_token_ids)
 
     def get_num_computed_tokens(self) -> int:
         """Return the number of prefill tokens that are already computed."""
