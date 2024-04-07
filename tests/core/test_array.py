@@ -1,5 +1,7 @@
-from vllm.array import VarLenArray
 import numpy as np
+
+from vllm.array import VarLenArray
+
 
 def test_var_len_array():
     vla = VarLenArray(10, META_SIZE=1)
@@ -48,10 +50,10 @@ def test_var_len_array():
     assert vla[5] == 9
     assert len(vla) == 6
 
-    assert vla.is_empty() == False
+    assert vla.is_empty() is False
     assert vla.get_num_empty_slots() == 4
-    assert vla.is_full() == False
-    assert vla # __bool__
+    assert vla.is_full() is False
+    assert vla  # __bool__
     vla.set_meta_item(0, 10)
     assert vla.get_meta_item(0) == 10
     assert vla.to_array().tolist() == [0, 2, 3, 8, 6, 9]

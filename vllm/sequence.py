@@ -285,7 +285,7 @@ class Sequence:
             self._append_logical_block()
             last_block = self.logical_token_blocks[-1]
 
-        last_block.append_single_token(token_id)
+        last_block.append(token_id)
 
     def append_token_id(
         self,

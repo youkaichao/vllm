@@ -1,20 +1,13 @@
 """Token blocks."""
 from typing import List
 
-import numpy as np
-from numba import njit, types
-
+from vllm.array import VarLenArray
 from vllm.utils import Device
-
-_BLANK_TOKEN_ID = -1
 
 DEFAULT_LAST_ACCESSED_TIME = -1
 
-# Number of slots reserved for metadata in a logical block
-LOGICAL_TOKEN_BLOCK_META_SIZE = 3
 
-
-class LogicalTokenBlock:
+class LogicalTokenBlock(VarLenArray):
     """A block that stores a contiguous chunk of tokens from left to right.
 
     Logical blocks are used to represent the states of the corresponding
@@ -26,28 +19,25 @@ class LogicalTokenBlock:
         block_number: int,
         block_size: int,
     ) -> None:
-        self.data = numba_initialize_block(block_number, block_size)
+        super().__init__(max_size=block_size, META_SIZE=1)
+        self.set_meta_item(0, block_number)
 
-    def is_empty(self) -> bool:
-        return numba_is_empty(self.data)
+    @property
+    def block_number(self) -> int:
+        return self.get_meta_item(0)
 
-    def get_num_empty_slots(self) -> int:
-        return numba_get_num_empty_slots(self.data)
-
-    def is_full(self) -> bool:
-        return numba_is_full(self.data)
+    @block_number.setter
+    def block_number(self, block_number: int) -> None:
+        self.set_meta_item(0, block_number)
 
     def append_tokens(self, token_ids: List[int]) -> None:
-        numba_append_tokens(self.data, token_ids)
-
-    def append_single_token(self, token_id: int) -> None:
-        numba_append_single_token(self.data, token_id)
+        self.extend(token_ids)
 
     def get_token_ids(self) -> List[int]:
-        return numba_get_token_ids(self.data)
+        return self.to_array().tolist()
 
     def get_last_token_id(self) -> int:
-        return numba_get_last_token_id(self.data)
+        return self[-1]
 
 
 class PhysicalTokenBlock:
