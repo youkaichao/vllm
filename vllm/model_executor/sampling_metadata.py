@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import torch
+import numpy as np
 
 from vllm.model_executor.layers.ops.sample import get_num_triton_sampler_splits
 from vllm.sampling_params import SamplingParams, SamplingType
@@ -215,12 +216,16 @@ class SamplingTensors:
         pin_memory = is_pin_memory_available()
         prompt_max_len = max(len(tokens) for tokens in prompt_tokens)
         prompt_padded_tokens = [
-            tokens + [vocab_size] * (prompt_max_len - len(tokens))
+            np.pad(tokens, (0, prompt_max_len - len(tokens)),
+                   mode="constant",
+                   constant_values=vocab_size)
             for tokens in prompt_tokens
         ]
         output_max_len = max(len(tokens) for tokens in output_tokens)
         output_padded_tokens = [
-            tokens + [vocab_size] * (output_max_len - len(tokens))
+            np.pad(tokens, (0, output_max_len - len(tokens)),
+                   mode="constant",
+                   constant_values=vocab_size)
             for tokens in output_tokens
         ]
 
