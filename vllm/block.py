@@ -34,7 +34,7 @@ class LogicalTokenBlock(VarLenArray):
         self.extend(token_ids)
 
     def get_token_ids(self) -> List[int]:
-        return self.to_array().tolist()
+        return self.to_array()
 
     def get_last_token_id(self) -> int:
         return self[-1]
