@@ -80,9 +80,9 @@ numba_extend = numba_extend.compile(
 def numba_concat(elements, data):
     # `elements` is a full array
     # return a new array
-    # useful to concat prompt (which does not change) and output_ids which changes
+    # useful to concat prompt (which does not change)
+    #  and output_ids which changes
     elements_len = len(elements)
-    max_size = data[0]
     num_elements = data[1]
     META_SIZE = data[2]
     output = np.empty((elements_len + num_elements, ), dtype=np_dtype)
@@ -98,7 +98,6 @@ def numba_concat(elements, data):
 
 numba_concat = numba_concat.compile(
     (types.Array(numba_dtype, 1, 'C'), types.Array(numba_dtype, 1, 'C')))
-
 
 
 @njit

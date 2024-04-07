@@ -57,5 +57,6 @@ def test_var_len_array():
     vla.set_meta_item(0, 10)
     assert vla.get_meta_item(0) == 10
     assert vla.to_array().tolist() == [0, 2, 3, 8, 6, 9]
-    assert vla.concat(np.array([10, 11, 12])).tolist() == [10, 11, 12, 0, 2, 3, 8, 6, 9]
+    assert vla.concat(np.array([10, 11, 12
+                                ])).tolist() == [10, 11, 12, 0, 2, 3, 8, 6, 9]
     assert vla.to_array().tolist() == [0, 2, 3, 8, 6, 9]
