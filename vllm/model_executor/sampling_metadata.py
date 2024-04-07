@@ -222,7 +222,7 @@ class SamplingTensors:
         ]
         output_max_len = max(len(tokens) for tokens in output_tokens)
         output_padded_tokens = [
-            np.pad(tokens, (0, output_max_len - len(tokens)),
+            np.pad(tokens.to_array(), (0, output_max_len - len(tokens)),
                    mode="constant",
                    constant_values=vocab_size) for tokens in output_tokens
         ]
