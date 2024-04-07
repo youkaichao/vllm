@@ -55,7 +55,7 @@ def numba_extend(data, elements):
     # numba will optimize this loop
     for i in range(num_to_extend):
         data[start + i] = elements[i]
-    block[1] += num_to_extend  # Update num_tokens
+    data[1] += num_to_extend  # Update num_tokens
 numba_extend = numba_extend.compile((types.Array(numba_dtype, 1, 'C'), types.Array(numba_dtype, 1, 'C')))
 
 @njit
@@ -82,6 +82,18 @@ def numba_get_item(data, idx):
 numba_get_item = numba_get_item.compile((types.Array(numba_dtype, 1, 'C'), numba_dtype))
 
 @njit
+def numba_set_item(data, idx, item):
+    max_size = data[0]
+    num_elements = data[1]
+    META_SIZE = data[2]
+    if idx < 0:
+        idx += num_elements
+    assert 0 <= idx < num_elements
+    data[N_RESERVED + META_SIZE + 1 + idx] = item
+numba_set_item = numba_set_item.compile((types.Array(numba_dtype, 1, 'C'), numba_dtype, numba_dtype))
+
+
+@njit
 def numba_get_meta_item(data, idx):
     META_SIZE = data[2]
     assert idx < META_SIZE
@@ -91,7 +103,7 @@ numba_get_meta_item = numba_get_meta_item.compile((types.Array(numba_dtype, 1, '
 @njit
 def numba_set_meta_item(data, idx, item):
     data[N_RESERVED + 1 + idx] = item
-numba_get_meta_item = numba_get_meta_item.compile((types.Array(numba_dtype, 1, 'C'), numba_dtype, numba_dtype))
+numba_set_meta_item = numba_set_meta_item.compile((types.Array(numba_dtype, 1, 'C'), numba_dtype, numba_dtype))
 
 
 @njit
@@ -123,7 +135,7 @@ class VarLenArray:
         return numba_is_full(self.data)
 
     def __bool__(self):
-        return numba_is_empty(self.data)
+        return not numba_is_empty(self.data)
 
     def extend(self, elements):
         numba_extend(self.data, elements)
@@ -133,6 +145,9 @@ class VarLenArray:
 
     def __getitem__(self, idx):
         return numba_get_item(self.data, idx)
+
+    def __setitem__(self, idx, item):
+        numba_set_item(self.data, idx, item)
 
     def set_meta_item(self, idx, item):
         numba_set_meta_item(self.data, idx, item)
