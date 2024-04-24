@@ -5,6 +5,9 @@
 # prepare basic build environment
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS dev
 
+# Create a new user 'testuser' with a specified home directory
+RUN useradd -m -d /home/testuser -s /bin/bash testuser
+
 RUN apt-get update -y \
     && apt-get install -y python3-pip git
 
