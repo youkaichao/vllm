@@ -5,9 +5,6 @@
 # prepare basic build environment
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS dev
 
-# Create a new user 'testuser' with a specified home directory
-RUN useradd -m -d /home/testuser -s /bin/bash testuser
-
 RUN apt-get update -y \
     && apt-get install -y python3-pip git
 
@@ -128,6 +125,9 @@ RUN --mount=type=bind,from=flash-attn-builder,src=/usr/src/flash-attention-v2,ta
 # image to run unit testing suite
 # note that this uses vllm installed by `pip`
 FROM vllm-base AS test
+
+# Create a new user 'testuser' with a specified home directory
+RUN useradd -m -d /home/testuser -s /bin/bash testuser
 
 ADD . /vllm-workspace/
 
