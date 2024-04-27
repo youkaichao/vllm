@@ -5,6 +5,7 @@ import torch
 from torch.distributed import ProcessGroup
 
 from .parallel_state import (get_tensor_model_parallel_group,
+                             get_cpu_world_group,
                              get_tensor_model_parallel_rank,
                              get_tensor_model_parallel_world_size,
                              is_pynccl_enabled_for_all_reduce)
@@ -146,7 +147,7 @@ def broadcast_tensor_dict(
     group: Optional[ProcessGroup] = None,
 ) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
     """Broadcast the input tensor dictionary."""
-    group = group or torch.distributed.group.WORLD
+    group = group or get_cpu_world_group()
     ranks = torch.distributed.get_process_group_ranks(group)
     assert src in ranks, f"Invalid src rank ({src})"
 
@@ -156,56 +157,23 @@ def broadcast_tensor_dict(
         return tensor_dict
 
     rank = torch.distributed.get_rank()
+    len_of_data = torch.tensor([0], dtype=torch.int64)
     if rank == src:
-        metadata_list: List[Tuple[Any, Any]] = []
-        assert isinstance(
-            tensor_dict,
-            dict), (f"Expecting a dictionary, got {type(tensor_dict)}")
-        for key, value in tensor_dict.items():
-            if isinstance(value, torch.Tensor):
-                assert value.is_cuda, (
-                    f"Tensor {key}: {value} is not on cuda. Currently we only "
-                    f"support broadcasting tensors on cuda.")
-                metadata_list.append(
-                    (key, TensorMetadata(value.dtype, value.size())))
-            else:
-                metadata_list.append((key, value))
-        torch.distributed.broadcast_object_list([metadata_list],
-                                                src=src,
-                                                group=group)
-        async_handles = []
-        for key, value in metadata_list:
-            if isinstance(value, TensorMetadata):
-                tensor = tensor_dict[key]
-                async_handles.append(
-                    torch.distributed.broadcast(tensor,
-                                                src=src,
-                                                group=group,
-                                                async_op=True))
-        for async_handle in async_handles:
-            async_handle.wait()
-
+        from safetensors.torch import save
+        buffer = save(tensor_dict)
+        byte_storage = torch.ByteStorage._from_buffer(buffer)
+        byte_tensor = torch.ByteTensor(byte_storage)
+        len_of_data[0] = len(byte_tensor)
+        torch.distributed.broadcast(len_of_data, src=src, group=group)
+        torch.distributed.broadcast(byte_tensor, src=src, group=group)
     else:
-        recv_metadata_list = [None]
-        torch.distributed.broadcast_object_list(recv_metadata_list,
-                                                src=src,
-                                                group=group)
-        assert recv_metadata_list[0] is not None
-        tensor_dict = {}
-        async_handles = []
-        for key, value in recv_metadata_list[0]:
-            if isinstance(value, TensorMetadata):
-                tensor = torch.empty(value.size,
-                                     dtype=value.dtype,
-                                     device="cuda")
-                async_handle = torch.distributed.broadcast(tensor,
-                                                           src=src,
-                                                           async_op=True,
-                                                           group=group)
-                async_handles.append(async_handle)
-                tensor_dict[key] = tensor
-            else:
-                tensor_dict[key] = value
-        for async_handle in async_handles:
-            async_handle.wait()
+        torch.distributed.broadcast(len_of_data, src=src, group=group)
+        buffer = bytearray(len_of_data.item())
+        byte_storage = torch.ByteStorage._from_buffer(buffer)
+        byte_tensor = torch.ByteTensor(byte_storage)
+        torch.distributed.broadcast(byte_tensor, src=src, group=group)
+        from safetensors.torch import load
+        device = f"cuda:{torch.cuda.current_device()}"
+        with torch.device(device):
+            tensor_dict = load(buffer)
     return tensor_dict
