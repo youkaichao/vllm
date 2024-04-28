@@ -67,8 +67,11 @@ def all_gather_test_worker(tensor_parallel_size: int, rank: int,
 
 import dataclasses
 from vllm.types import EfficientPickleDataclass
+
+# note that the name cannot be TestMetaData, as it will conflict with the
+# pytest test collection.
 @dataclasses.dataclass
-class TestMetaData(EfficientPickleDataclass):
+class _TestMetaData(EfficientPickleDataclass):
     fragment: Optional[torch.Tensor] = None
     a: Optional[torch.Tensor] = None
     b: Optional[torch.Tensor] = None
@@ -87,7 +90,7 @@ def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
     torch.cuda.set_device(device)
     init_test_distributed_environment(1, tensor_parallel_size, rank,
                                       distributed_init_port)
-    test_dict = TestMetaData(
+    test_dict = _TestMetaData(
                 fragment=torch.arange(3, dtype=torch.int8, device="cuda"),
         a=torch.arange(8, dtype=torch.float32, device="cuda"),
                                 b=torch.arange(16, dtype=torch.int8, device="cuda"),
@@ -97,7 +100,7 @@ def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
     if rank == 0:
         test_dict = broadcast_tensor_dict(test_dict, src=0)
     else:
-        recv_dict = broadcast_tensor_dict(TestMetaData, src=0)
+        recv_dict = broadcast_tensor_dict(_TestMetaData, src=0)
         assert torch.allclose(recv_dict.fragment, test_dict.fragment)
         assert torch.allclose(recv_dict.a, test_dict.a)
         assert torch.allclose(recv_dict.b, test_dict.b)
