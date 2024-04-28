@@ -68,6 +68,7 @@ import dataclasses
 from vllm.types import EfficientPickleDataclass
 @dataclasses.dataclass
 class TestMetaData(EfficientPickleDataclass):
+    fragment: Optional[torch.Tensor] = None
     a: Optional[torch.Tensor] = None
     b: Optional[torch.Tensor] = None
     c: str = ""
@@ -85,7 +86,9 @@ def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
     torch.cuda.set_device(device)
     init_test_distributed_environment(1, tensor_parallel_size, rank,
                                       distributed_init_port)
-    test_dict = TestMetaData(a=torch.arange(8, dtype=torch.float32, device="cuda"),
+    test_dict = TestMetaData(
+                fragment=torch.arange(3, dtype=torch.int8, device="cuda"),
+        a=torch.arange(8, dtype=torch.float32, device="cuda"),
                                 b=torch.arange(16, dtype=torch.int8, device="cuda"),
                                 c="test",
                                 d=[1, 2, 3],
@@ -94,7 +97,7 @@ def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
         test_dict = broadcast_tensor_dict(test_dict, src=0)
     else:
         recv_dict = broadcast_tensor_dict(TestMetaData, src=0)
-        assert len(recv_dict) == len(test_dict)
+        assert torch.allclose(recv_dict.fragment, test_dict.fragment)
         assert torch.allclose(recv_dict.a, test_dict.a)
         assert torch.allclose(recv_dict.b, test_dict.b)
         assert recv_dict.c == test_dict.c
