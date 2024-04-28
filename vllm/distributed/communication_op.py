@@ -1,4 +1,3 @@
-import io
 from collections import namedtuple
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -6,7 +5,6 @@ import torch
 from torch.distributed import ProcessGroup
 
 from .parallel_state import (get_tensor_model_parallel_group,
-                             get_cpu_world_group,
                              get_tensor_model_parallel_rank,
                              get_tensor_model_parallel_world_size,
                              is_pynccl_enabled_for_all_reduce)
@@ -142,7 +140,78 @@ def broadcast_object_list(obj_list: List[Any],
 TensorMetadata = namedtuple("TensorMetadata", ["dtype", "size"])
 
 
-def broadcast_tensor_dict(
+def broadcast_device_data(
+    tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None,
+    src: int = 0,
+    group: Optional[ProcessGroup] = None,
+) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
+    """Broadcast the input tensor dictionary."""
+    group = group or torch.distributed.group.WORLD
+    ranks = torch.distributed.get_process_group_ranks(group)
+    assert src in ranks, f"Invalid src rank ({src})"
+
+    # Bypass the function if we are using only 1 GPU.
+    world_size = torch.distributed.get_world_size(group=group)
+    if world_size == 1:
+        return tensor_dict
+
+    rank = torch.distributed.get_rank()
+    if rank == src:
+        metadata_list: List[Tuple[Any, Any]] = []
+        assert isinstance(
+            tensor_dict,
+            dict), (f"Expecting a dictionary, got {type(tensor_dict)}")
+        for key, value in tensor_dict.items():
+            if isinstance(value, torch.Tensor):
+                assert value.is_cuda, (
+                    f"Tensor {key}: {value} is not on cuda. Currently we only "
+                    f"support broadcasting tensors on cuda.")
+                metadata_list.append(
+                    (key, TensorMetadata(value.dtype, value.size())))
+            else:
+                metadata_list.append((key, value))
+        torch.distributed.broadcast_object_list([metadata_list],
+                                                src=src,
+                                                group=group)
+        async_handles = []
+        for key, value in metadata_list:
+            if isinstance(value, TensorMetadata):
+                tensor = tensor_dict[key]
+                async_handles.append(
+                    torch.distributed.broadcast(tensor,
+                                                src=src,
+                                                group=group,
+                                                async_op=True))
+        for async_handle in async_handles:
+            async_handle.wait()
+
+    else:
+        recv_metadata_list = [None]
+        torch.distributed.broadcast_object_list(recv_metadata_list,
+                                                src=src,
+                                                group=group)
+        assert recv_metadata_list[0] is not None
+        tensor_dict = {}
+        async_handles = []
+        for key, value in recv_metadata_list[0]:
+            if isinstance(value, TensorMetadata):
+                tensor = torch.empty(value.size,
+                                     dtype=value.dtype,
+                                     device="cuda")
+                async_handle = torch.distributed.broadcast(tensor,
+                                                           src=src,
+                                                           async_op=True,
+                                                           group=group)
+                async_handles.append(async_handle)
+                tensor_dict[key] = tensor
+            else:
+                tensor_dict[key] = value
+        for async_handle in async_handles:
+            async_handle.wait()
+    return tensor_dict
+
+
+def broadcast_cpu_data(
     tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None,
     src: int = 0,
     group: Optional[ProcessGroup] = None,
@@ -172,7 +241,28 @@ def broadcast_tensor_dict(
         buffer = bytearray(len_of_data.item())
         byte_tensor = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
         torch.distributed.broadcast(byte_tensor, src=src, group=group)
-        device = f"cuda:{torch.cuda.current_device()}"
         buffer = io.BytesIO(memoryview(buffer).tobytes())
-        tensor_dict = torch.load(buffer, map_location=device)
+        tensor_dict = torch.load(buffer)
+    return tensor_dict
+
+
+def broadcast_tensor_dict(
+    tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None,
+    src: int = 0,
+    group: Optional[ProcessGroup] = None,
+) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
+    device_data = {}
+    cpu_data = {}
+    if tensor_dict is not None:
+        for key, value in tensor_dict.items():
+            if isinstance(value, torch.Tensor) and value.is_cuda:
+                device_data[key] = value
+            else:
+                cpu_data[key] = value
+        broadcast_cpu_data(cpu_data, src=src, group=group)
+        broadcast_device_data(device_data, src=src, group=group)
+    else:
+        cpu_data = broadcast_cpu_data(src=src, group=group)
+        device_data = broadcast_device_data(src=src, group=group)
+    tensor_dict = {**cpu_data, **device_data}
     return tensor_dict
