@@ -176,18 +176,18 @@ def broadcast_tensor_dict(
                 metadata_list.append(
                     (key, TensorMetadata(value.dtype, value.size(), start_indx, end_indx)))
                 start_indx = end_indx
-                buffer_views.append(value.view(-1).view(dtype=torch.uint8))
+                buffer_views.append((value.view(-1).view(dtype=torch.uint8), start_indx, end_indx))
                 if end_indx % 8 != 0:
-                    # align to 8 bytes
+                    # align start to 8 bytes
                     start_indx += 8 - end_indx % 8
-                    # dummy tensor to align to 8 bytes
-                    buffer_views.append(torch.empty(8 - end_indx % 8, dtype=torch.uint8, device="cuda"))
             else:
                 metadata_list.append((key, value))
+        total_buffer = torch.empty(start_indx, dtype=torch.uint8, device="cuda")
         if buffer_views:
-            # launch cat kernel first, then broadcast metadata, then broadcast data
-            # hoping the cat kernel can overlap with metadata broadcast
-            total_buffer = torch.cat(buffer_views)
+            # launch copy kernel first, then broadcast metadata, then broadcast data
+            # hoping the copy kernel can overlap with metadata broadcast
+            for view, start_indx, end_indx in buffer_views:
+                total_buffer[start_indx:end_indx].copy_(view)
         torch.distributed.broadcast_object_list([metadata_list],
                                                 src=src,
                                                 group=cpu_group)
