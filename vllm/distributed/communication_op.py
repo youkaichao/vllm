@@ -198,7 +198,7 @@ def broadcast_tensor_dict(
         tensor_dict = {}
         for key, value in recv_metadata_list[0]:
             if isinstance(value, TensorMetadata):
-                tensor = total_buffer[value.start_indx:value.end_indx].view(value.size).view(dtype=value.dtype)
+                tensor = total_buffer[value.start_indx:value.end_indx].view(dtype=value.dtype).view(value.size)
                 tensor_dict[key] = tensor
             else:
                 tensor_dict[key] = value
