@@ -1,4 +1,5 @@
 """A GPU worker class."""
+import dataclasses
 import gc
 import os
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -21,7 +22,14 @@ from vllm.sequence import SamplerOutput, SequenceGroupMetadata
 from vllm.worker.cache_engine import CacheEngine
 from vllm.worker.model_runner import ModelRunner
 from vllm.worker.worker_base import WorkerBase
+from vllm.types import EfficientPickleDataclass
 
+@dataclasses.dataclass
+class CacheSwapMetaData(EfficientPickleDataclass):
+    num_seq_groups: int = 1
+    blocks_to_swap_in: Dict[int, int] = dataclasses.field(default_factory=dict)
+    blocks_to_swap_out: Dict[int, int] = dataclasses.field(default_factory=dict)
+    blocks_to_copy: Dict[int, List[int]] = dataclasses.field(default_factory=dict)
 
 class Worker(WorkerBase):
     """A worker class that executes (a partition of) the model on a GPU.
@@ -223,19 +231,15 @@ class Worker(WorkerBase):
             assert blocks_to_swap_in is not None
             assert blocks_to_swap_out is not None
             assert blocks_to_copy is not None
-            data: Dict[str, Any] = {
-                "num_seq_groups": num_seq_groups,
-                "blocks_to_swap_in": blocks_to_swap_in,
-                "blocks_to_swap_out": blocks_to_swap_out,
-                "blocks_to_copy": blocks_to_copy,
-            }
-            broadcast_tensor_dict(data, src=0)
+            data = CacheSwapMetaData(num_seq_groups, blocks_to_swap_in,
+                                     blocks_to_swap_out, blocks_to_copy)
+            data = broadcast_tensor_dict(data, src=0)
         else:
-            data = broadcast_tensor_dict(src=0)
-            num_seq_groups = data["num_seq_groups"]
-            blocks_to_swap_in = data["blocks_to_swap_in"]
-            blocks_to_swap_out = data["blocks_to_swap_out"]
-            blocks_to_copy = data["blocks_to_copy"]
+            data = broadcast_tensor_dict(CacheSwapMetaData, src=0)
+            num_seq_groups = data.num_seq_groups
+            blocks_to_swap_in = data.blocks_to_swap_in
+            blocks_to_swap_out = data.blocks_to_swap_out
+            blocks_to_copy = data.blocks_to_copy
 
         assert blocks_to_swap_in is not None
         assert blocks_to_swap_out is not None
