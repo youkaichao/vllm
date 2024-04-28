@@ -144,7 +144,9 @@ from vllm.types import EfficientPickleDataclass, TensorMetadata
 
 def broadcast_object(obj: Optional[Tuple[Any, ...]] = None,
                           src: int = 0,
-                          group: Optional[ProcessGroup] = None) -> Tuple[Any, ...]:
+                          group: Optional[ProcessGroup] = None,
+                          pickle_max_bytes: Optional[int] = None
+                          ) -> Tuple[Any, ...]:
     """Broadcast the input object if the pickled object size is less than _MAX_BYTES_AFTER_PICKLE bytes."""
     group = group or get_cpu_world_group()
     ranks = torch.distributed.get_process_group_ranks(group)
@@ -154,11 +156,13 @@ def broadcast_object(obj: Optional[Tuple[Any, ...]] = None,
     world_size = torch.distributed.get_world_size(group=group)
     if world_size == 1:
         return obj
+    
+    pickle_max_bytes = pickle_max_bytes or _MAX_BYTES_AFTER_PICKLE
     rank = torch.distributed.get_rank()
-    buffer = bytearray(_MAX_BYTES_AFTER_PICKLE)
+    buffer = bytearray(pickle_max_bytes)
     if rank == src:
         pickled_buffer = pickle.dumps(obj)
-        assert len(pickled_buffer) < _MAX_BYTES_AFTER_PICKLE, f"Object size after pickle {len(pickled_buffer)} is too large for broadcast"
+        assert len(pickled_buffer) < pickle_max_bytes, f"Object size after pickle {len(pickled_buffer)} is too large for broadcast"
         # pickle format itself knows when to stop, so we can just pad
         buffer[:len(pickled_buffer)] = pickled_buffer
         data = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
@@ -176,6 +180,7 @@ def broadcast_tensor_dict(
     tensor_dict: Union[EfficientPickleDataclass, type] = None,
     src: int = 0,
     group: Optional[ProcessGroup] = None,
+    pickle_max_bytes: Optional[int] = None,
 ) -> EfficientPickleDataclass:
     """Broadcast the input tensor dictionary.
     The broadcast rank holds the object, other ranks holds the class. Only the state of the object is broadcasted.
@@ -197,12 +202,12 @@ def broadcast_tensor_dict(
     if rank == src:
         assert isinstance(tensor_dict, EfficientPickleDataclass)
         total_buffer, state = tensor_dict.getstate()
-        broadcast_object(state, src=src, group=cpu_group)
+        broadcast_object(state, src=src, group=cpu_group, pickle_max_bytes=pickle_max_bytes)
         if total_buffer.numel() > 0:
             torch.distributed.broadcast(total_buffer, src=src, group=group)
             del total_buffer
     else:
-        state = broadcast_object(src=src, group=cpu_group)
+        state = broadcast_object(src=src, group=cpu_group, pickle_max_bytes=pickle_max_bytes)
         total_buffer_size = max([value.end_indx for value in state if isinstance(value, TensorMetadata)], default=0)
         total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
         if total_buffer_size > 0:
