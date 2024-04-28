@@ -159,7 +159,7 @@ def broadcast_tensor_dict(
 
     rank = torch.distributed.get_rank()
     if rank == src:
-        metadata_list: List[Tuple[Any, Any]] = []
+        metadata_list = {}
         # index in bytes
         start_indx = 0
         end_indx = 0
@@ -173,15 +173,14 @@ def broadcast_tensor_dict(
                     f"Tensor {key}: {value} is not on cuda. Currently we only "
                     f"support broadcasting tensors on cuda.")
                 end_indx = start_indx + value.nelement() * value.element_size()
-                metadata_list.append(
-                    (key, TensorMetadata(value.dtype, value.size(), start_indx, end_indx)))
+                metadata_list[key] =TensorMetadata(value.dtype, value.size(), start_indx, end_indx)
                 buffer_views.append((value.view(-1).view(dtype=torch.uint8), start_indx, end_indx))
                 start_indx = end_indx
                 if end_indx % 8 != 0:
                     # align start to 8 bytes
                     start_indx += 8 - end_indx % 8
             else:
-                metadata_list.append((key, value))
+                metadata_list[key] = value
         total_buffer = torch.empty(start_indx, dtype=torch.uint8, device="cuda")
         if buffer_views:
             # launch copy kernel first, then broadcast metadata, then broadcast data
@@ -200,12 +199,12 @@ def broadcast_tensor_dict(
                                                 src=src,
                                                 group=cpu_group)
         assert recv_metadata_list[0] is not None
-        total_buffer_size = max([value.end_indx for key, value in recv_metadata_list[0] if isinstance(value, TensorMetadata)], default=0)
+        total_buffer_size = max([value.end_indx for key, value in recv_metadata_list[0].items() if isinstance(value, TensorMetadata)], default=0)
         if total_buffer_size > 0:
             total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
             torch.distributed.broadcast(total_buffer, src=src, group=group)
         tensor_dict = {}
-        for key, value in recv_metadata_list[0]:
+        for key, value in recv_metadata_list[0].items():
             if isinstance(value, TensorMetadata):
                 tensor = total_buffer[value.start_indx:value.end_indx].view(dtype=value.dtype).view(value.size)
                 tensor_dict[key] = tensor
