@@ -139,7 +139,7 @@ def broadcast_object_list(obj_list: List[Any],
     return obj_list
 
 
-def broadcast_object(obj: Any,
+def broadcast_object(obj: Any = None,
                           src: int = 0,
                           group: Optional[ProcessGroup] = None) -> Any:
     """Broadcast the input object if the pickled object size is less than 1024 bytes."""
@@ -222,24 +222,18 @@ def broadcast_tensor_dict(
             # hoping the copy kernel can overlap with metadata broadcast
             for view, start_indx, end_indx in buffer_views:
                 total_buffer[start_indx:end_indx].copy_(view)
-        torch.distributed.broadcast_object_list([metadata_list],
-                                                src=src,
-                                                group=cpu_group)
+        broadcast_object(metadata_list, src=src, group=cpu_group)
         if buffer_views:
             torch.distributed.broadcast(total_buffer, src=src, group=group)
             del total_buffer
     else:
-        recv_metadata_list = [None]
-        torch.distributed.broadcast_object_list(recv_metadata_list,
-                                                src=src,
-                                                group=cpu_group)
-        assert recv_metadata_list[0] is not None
-        total_buffer_size = max([value.end_indx for key, value in recv_metadata_list[0].items() if isinstance(value, TensorMetadata)], default=0)
+        recv_metadata_list = broadcast_object(src=src, group=cpu_group)
+        total_buffer_size = max([value.end_indx for key, value in recv_metadata_list.items() if isinstance(value, TensorMetadata)], default=0)
         if total_buffer_size > 0:
             total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
             torch.distributed.broadcast(total_buffer, src=src, group=group)
         tensor_dict = {}
-        for key, value in recv_metadata_list[0].items():
+        for key, value in recv_metadata_list.items():
             if isinstance(value, TensorMetadata):
                 tensor = total_buffer[value.start_indx:value.end_indx].view(dtype=value.dtype).view(value.size)
                 tensor_dict[key] = tensor
