@@ -179,10 +179,13 @@ def broadcast_tensor_dict(
             else:
                 metadata_list.append((key, value))
         if buffer_views:
+            # launch cat kernel first, then broadcast metadata, then broadcast data
+            # hoping the cat kernel can overlap with metadata broadcast
             total_buffer = torch.cat(buffer_views)
-            torch.distributed.broadcast_object_list([metadata_list],
-                                                    src=src,
-                                                    group=cpu_group)
+        torch.distributed.broadcast_object_list([metadata_list],
+                                                src=src,
+                                                group=cpu_group)
+        if buffer_views:
             torch.distributed.broadcast(total_buffer, src=src, group=group)
             del total_buffer
     else:
