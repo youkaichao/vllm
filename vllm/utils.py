@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import dataclasses
 import enum
 import gc
 import glob
@@ -22,6 +23,15 @@ import torch
 from packaging.version import Version, parse
 
 from vllm.logger import enable_trace_function_call, init_logger
+from vllm.types import EfficientPickleDataclass
+
+@dataclasses.dataclass
+class CacheSwapMetaData(EfficientPickleDataclass):
+    num_seq_groups: int = 1
+    blocks_to_swap_in: Dict[int, int] = dataclasses.field(default_factory=dict)
+    blocks_to_swap_out: Dict[int, int] = dataclasses.field(default_factory=dict)
+    blocks_to_copy: Dict[int, int] = dataclasses.field(default_factory=dict)
+
 
 T = TypeVar("T")
 logger = init_logger(__name__)

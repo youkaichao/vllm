@@ -140,9 +140,11 @@ def broadcast_object_list(obj_list: List[Any],
 
 _MAX_BYTES_AFTER_PICKLE = 2048
 
-def broadcast_object(obj: Any = None,
+from vllm.types import EfficientPickleDataclass, TensorMetadata
+
+def broadcast_object(obj: Tuple[Any, ...],
                           src: int = 0,
-                          group: Optional[ProcessGroup] = None) -> Any:
+                          group: Optional[ProcessGroup] = None) -> Tuple[Any, ...]:
     """Broadcast the input object if the pickled object size is less than _MAX_BYTES_AFTER_PICKLE bytes."""
     group = group or get_cpu_world_group()
     ranks = torch.distributed.get_process_group_ranks(group)
@@ -170,15 +172,14 @@ def broadcast_object(obj: Any = None,
         return pickle.loads(memoryview(buffer).tobytes())
 
 
-TensorMetadata = namedtuple("TensorMetadata", ["dtype", "size", "start_indx", "end_indx"])
-
-
 def broadcast_tensor_dict(
-    tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None,
+    tensor_dict: Union[EfficientPickleDataclass, type] = None,
     src: int = 0,
     group: Optional[ProcessGroup] = None,
-) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
-    """Broadcast the input tensor dictionary."""
+) -> EfficientPickleDataclass:
+    """Broadcast the input tensor dictionary.
+    The broadcast rank holds the object, other ranks holds the class. Only the state of the object is broadcasted.
+    """
     if group is None:
         group = torch.distributed.group.WORLD
         cpu_group = get_cpu_world_group()
@@ -194,49 +195,19 @@ def broadcast_tensor_dict(
 
     rank = torch.distributed.get_rank()
     if rank == src:
-        metadata_list = {}
-        # index in bytes
-        start_indx = 0
-        end_indx = 0
-        buffer_views = []
-        assert isinstance(
-            tensor_dict,
-            dict), (f"Expecting a dictionary, got {type(tensor_dict)}")
-        for key, value in tensor_dict.items():
-            if isinstance(value, torch.Tensor):
-                assert value.is_cuda, (
-                    f"Tensor {key}: {value} is not on cuda. Currently we only "
-                    f"support broadcasting tensors on cuda.")
-                end_indx = start_indx + value.nelement() * value.element_size()
-                metadata_list[key] =TensorMetadata(value.dtype, value.size(), start_indx, end_indx)
-                buffer_views.append((value.view(-1).view(dtype=torch.uint8), start_indx, end_indx))
-                start_indx = end_indx
-                if end_indx % 8 != 0:
-                    # align start to 8 bytes
-                    start_indx += 8 - end_indx % 8
-            else:
-                metadata_list[key] = value
-        total_buffer = torch.empty(start_indx, dtype=torch.uint8, device="cuda")
-        if buffer_views:
-            # launch copy kernel first, then broadcast metadata, then broadcast data
-            # hoping the copy kernel can overlap with metadata broadcast
-            for view, start_indx, end_indx in buffer_views:
-                total_buffer[start_indx:end_indx].copy_(view)
-        broadcast_object(metadata_list, src=src, group=cpu_group)
-        if buffer_views:
+        assert isinstance(tensor_dict, EfficientPickleDataclass)
+        total_buffer, state = tensor_dict.getstate()
+        broadcast_object(state, src=src, group=cpu_group)
+        if total_buffer.numel() > 0:
             torch.distributed.broadcast(total_buffer, src=src, group=group)
             del total_buffer
     else:
-        recv_metadata_list = broadcast_object(src=src, group=cpu_group)
-        total_buffer_size = max([value.end_indx for key, value in recv_metadata_list.items() if isinstance(value, TensorMetadata)], default=0)
+        state = broadcast_object(src=src, group=cpu_group)
+        total_buffer_size = max([value.end_indx for value in state if isinstance(value, TensorMetadata)], default=0)
+        total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
         if total_buffer_size > 0:
-            total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
             torch.distributed.broadcast(total_buffer, src=src, group=group)
-        tensor_dict = {}
-        for key, value in recv_metadata_list.items():
-            if isinstance(value, TensorMetadata):
-                tensor = total_buffer[value.start_indx:value.end_indx].view(dtype=value.dtype).view(value.size)
-                tensor_dict[key] = tensor
-            else:
-                tensor_dict[key] = value
+        assert isinstance(tensor_dict, type)
+        tensor_dict = tensor_dict()
+        tensor_dict.setstate(total_buffer, state)
     return tensor_dict
