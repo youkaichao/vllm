@@ -13,7 +13,6 @@ from vllm.distributed import (broadcast_tensor_dict,
                               tensor_model_parallel_all_reduce)
 from vllm.test_utils import (init_test_distributed_environment,
                              multi_process_tensor_parallel)
-from typing import List, Dict, Optional
 
 
 @ray.remote(num_gpus=1, max_calls=1)
@@ -68,17 +67,6 @@ def all_gather_test_worker(tensor_parallel_size: int, rank: int,
 import dataclasses
 from vllm.types import EfficientPickleDataclass
 
-# note that the name cannot be TestMetaData, as it will conflict with the
-# pytest test collection.
-@dataclasses.dataclass
-class _TestMetaData(EfficientPickleDataclass):
-    fragment: Optional[torch.Tensor] = None
-    a: Optional[torch.Tensor] = None
-    b: Optional[torch.Tensor] = None
-    c: str = ""
-    d: List[int] = dataclasses.field(default_factory=list)
-    e: Dict[str, int] = dataclasses.field(default_factory=dict)
-
 @ray.remote(num_gpus=1, max_calls=1)
 def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
                                       distributed_init_port: str):
@@ -90,6 +78,20 @@ def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
     torch.cuda.set_device(device)
     init_test_distributed_environment(1, tensor_parallel_size, rank,
                                       distributed_init_port)
+
+    # we have to put it here, because ray cannot import this module.
+    from typing import List, Dict, Optional
+    # note that the name cannot be TestMetaData, as it will conflict with the
+    # pytest test collection.
+    @dataclasses.dataclass
+    class _TestMetaData(EfficientPickleDataclass):
+        fragment: Optional[torch.Tensor] = None
+        a: Optional[torch.Tensor] = None
+        b: Optional[torch.Tensor] = None
+        c: str = ""
+        d: List[int] = dataclasses.field(default_factory=list)
+        e: Dict[str, int] = dataclasses.field(default_factory=dict)
+
     test_dict = _TestMetaData(
                 fragment=torch.arange(3, dtype=torch.int8, device="cuda"),
         a=torch.arange(8, dtype=torch.float32, device="cuda"),
