@@ -138,29 +138,28 @@ def broadcast_object_list(obj_list: List[Any],
     torch.distributed.broadcast_object_list(obj_list, src=src, group=group)
     return obj_list
 
+_MAX_BYTES_AFTER_PICKLE = 2048
 
 def broadcast_object(obj: Any = None,
                           src: int = 0,
                           group: Optional[ProcessGroup] = None) -> Any:
-    """Broadcast the input object if the pickled object size is less than 1024 bytes."""
+    """Broadcast the input object if the pickled object size is less than _MAX_BYTES_AFTER_PICKLE bytes."""
     group = group or get_cpu_world_group()
     ranks = torch.distributed.get_process_group_ranks(group)
     assert src in ranks, f"Invalid src rank ({src})"
-
-    MAX_BYTES_AFTER_PICKLE = 1024
 
     # Bypass the function if we are using only 1 GPU.
     world_size = torch.distributed.get_world_size(group=group)
     if world_size == 1:
         return obj
     rank = torch.distributed.get_rank()
-    buffer = bytearray(MAX_BYTES_AFTER_PICKLE)
+    buffer = bytearray(_MAX_BYTES_AFTER_PICKLE)
     if rank == src:
         buffer = pickle.dumps(obj)
-        assert len(buffer) < MAX_BYTES_AFTER_PICKLE, f"Object size after pickle {len(buffer)} is too large for broadcast"
-        # pad to MAX_BYTES_AFTER_PICKLE bytes
+        assert len(buffer) < _MAX_BYTES_AFTER_PICKLE, f"Object size after pickle {len(buffer)} is too large for broadcast"
+        # pad to _MAX_BYTES_AFTER_PICKLE bytes
         # pickle format itself knows when to stop, so we can just pad with spaces
-        buffer = buffer + b' ' * (MAX_BYTES_AFTER_PICKLE - len(buffer) % MAX_BYTES_AFTER_PICKLE)
+        buffer = buffer + b' ' * (_MAX_BYTES_AFTER_PICKLE - len(buffer) % _MAX_BYTES_AFTER_PICKLE)
         buffer = bytearray(buffer)
         data = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
     else:
@@ -182,8 +181,11 @@ def broadcast_tensor_dict(
     group: Optional[ProcessGroup] = None,
 ) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
     """Broadcast the input tensor dictionary."""
-    group = group or torch.distributed.group.WORLD
-    cpu_group = group or get_cpu_world_group()
+    if group is None:
+        group = torch.distributed.group.WORLD
+        cpu_group = get_cpu_world_group()
+    else:
+        cpu_group = group
     ranks = torch.distributed.get_process_group_ranks(group)
     assert src in ranks, f"Invalid src rank ({src})"
 
