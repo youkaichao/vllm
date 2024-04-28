@@ -1,3 +1,4 @@
+import io
 from collections import namedtuple
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -159,7 +160,6 @@ def broadcast_tensor_dict(
     rank = torch.distributed.get_rank()
     len_of_data = torch.tensor([0], dtype=torch.int64)
     if rank == src:
-        import io
         byte_stream = io.BytesIO()
         torch.save(tensor_dict, byte_stream)
         buffer = byte_stream.getbuffer()
