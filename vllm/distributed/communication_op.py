@@ -142,7 +142,7 @@ _MAX_BYTES_AFTER_PICKLE = 2048
 
 from vllm.types import EfficientPickleDataclass, TensorMetadata
 
-def broadcast_object(obj: Tuple[Any, ...],
+def broadcast_object(obj: Optional[Tuple[Any, ...]] = None,
                           src: int = 0,
                           group: Optional[ProcessGroup] = None) -> Tuple[Any, ...]:
     """Broadcast the input object if the pickled object size is less than _MAX_BYTES_AFTER_PICKLE bytes."""
