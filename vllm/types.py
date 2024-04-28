@@ -1,5 +1,6 @@
 import dataclasses
 import torch
+from typing import Tuple
 
 @dataclasses.dataclass
 class TensorMetadata:
