@@ -155,12 +155,10 @@ def broadcast_object(obj: Any = None,
     rank = torch.distributed.get_rank()
     buffer = bytearray(_MAX_BYTES_AFTER_PICKLE)
     if rank == src:
-        buffer = pickle.dumps(obj)
-        assert len(buffer) < _MAX_BYTES_AFTER_PICKLE, f"Object size after pickle {len(buffer)} is too large for broadcast"
-        # pad to _MAX_BYTES_AFTER_PICKLE bytes
-        # pickle format itself knows when to stop, so we can just pad with spaces
-        buffer = buffer + b' ' * (_MAX_BYTES_AFTER_PICKLE - len(buffer) % _MAX_BYTES_AFTER_PICKLE)
-        buffer = bytearray(buffer)
+        pickled_buffer = pickle.dumps(obj)
+        assert len(pickled_buffer) < _MAX_BYTES_AFTER_PICKLE, f"Object size after pickle {len(pickled_buffer)} is too large for broadcast"
+        # pickle format itself knows when to stop, so we can just pad
+        buffer[:len(pickled_buffer)] = pickled_buffer
         data = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
     else:
         data = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
