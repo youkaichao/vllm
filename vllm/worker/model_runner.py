@@ -98,6 +98,37 @@ class BatchType(IntEnum):
     MIXED = 2
 
 
+import dataclasses
+from vllm.types import EfficientPickleDataclass
+
+@dataclasses.dataclass
+class MetaData(EfficientPickleDataclass):
+    input_tokens: Optional[torch.Tensor] = None
+    input_positions: Optional[torch.Tensor] = None
+    selected_token_indices: Optional[torch.Tensor] = None
+    lora_requests: Optional[Set[LoRARequest]] = dataclasses.field(default_factory=set)
+    lora_mapping: Optional[LoRAMapping] = None
+    multi_modal_input: Optional[torch.Tensor] = None
+    num_prefill_tokens: int = 0
+    num_decode_tokens: int = 0
+    slot_mapping: Optional[torch.Tensor] = None
+    num_prefills: int = 0
+    batch_type: BatchType = BatchType.DECODE
+
+    # current hack: copy code
+    # TODO(youkaichao): refactor this
+    is_prompt: bool = False
+    prompt_lens: Optional[List[int]] = None
+    prompt_lens_tensor: Optional[torch.Tensor] = None
+    max_subquery_len: Optional[int] = None
+    max_context_len: Optional[int] = None
+    max_prompt_len: Optional[int] = None
+    subquery_start_loc: Optional[torch.Tensor] = None
+    seq_start_loc: Optional[torch.Tensor] = None
+    context_lens: Optional[torch.Tensor] = None
+    block_tables: Optional[torch.Tensor] = None
+    use_cuda_graph: bool = True
+
 class ModelRunner:
 
     def __init__(
@@ -631,25 +662,58 @@ class ModelRunner:
             else:
                 batch_type = BatchType.DECODE
 
-            metadata_dict = {
-                "input_tokens": input_tokens,
-                "input_positions": input_positions,
-                "selected_token_indices":
-                sampling_metadata.selected_token_indices,
-                "lora_requests": lora_requests,
-                "lora_mapping": lora_mapping,
-                "multi_modal_input": multi_modal_input,
-                "num_prefill_tokens": num_prefill_tokens,
-                "num_decode_tokens": num_decode_tokens,
-                "slot_mapping": slot_mapping,
-                "num_prefills": num_prefills,
-                "batch_type": batch_type,
-            }
             if prefill_attn_metadata is not None:
-                metadata_dict.update(prefill_attn_metadata.asdict_zerocopy())
+                is_prompt = prefill_attn_metadata.is_prompt
+                prompt_lens = prefill_attn_metadata.prompt_lens
+                prompt_lens_tensor = prefill_attn_metadata.prompt_lens_tensor
+                max_subquery_len = prefill_attn_metadata.max_subquery_len
+                max_context_len = prefill_attn_metadata.max_context_len
+                max_prompt_len = prefill_attn_metadata.max_prompt_len
+                subquery_start_loc = prefill_attn_metadata.subquery_start_loc
+                seq_start_loc = prefill_attn_metadata.seq_start_loc
+                context_lens = prefill_attn_metadata.context_lens
+                block_tables = prefill_attn_metadata.block_tables
+                use_cuda_graph = prefill_attn_metadata.use_cuda_graph
             else:
                 assert decode_attn_metadata is not None
-                metadata_dict.update(decode_attn_metadata.asdict_zerocopy())
+                is_prompt = decode_attn_metadata.is_prompt
+                prompt_lens = decode_attn_metadata.prompt_lens
+                prompt_lens_tensor = decode_attn_metadata.prompt_lens_tensor
+                max_subquery_len = decode_attn_metadata.max_subquery_len
+                max_context_len = decode_attn_metadata.max_context_len
+                max_prompt_len = decode_attn_metadata.max_prompt_len
+                subquery_start_loc = decode_attn_metadata.subquery_start_loc
+                seq_start_loc = decode_attn_metadata.seq_start_loc
+                context_lens = decode_attn_metadata.context_lens
+                block_tables = decode_attn_metadata.block_tables
+                use_cuda_graph = decode_attn_metadata.use_cuda_graph
+
+            metadata_dict = MetaData(
+                input_tokens=input_tokens,
+                input_positions=input_positions,
+                selected_token_indices=sampling_metadata.selected_token_indices,
+                lora_requests=lora_requests,
+                lora_mapping=lora_mapping,
+                multi_modal_input=multi_modal_input,
+                num_prefill_tokens=num_prefill_tokens,
+                num_decode_tokens=num_decode_tokens,
+                slot_mapping=slot_mapping,
+                num_prefills=num_prefills,
+                batch_type=batch_type,
+
+                is_prompt=is_prompt,
+                prompt_lens=prompt_lens,
+                prompt_lens_tensor=prompt_lens_tensor,
+                max_subquery_len=max_subquery_len,
+                max_context_len=max_context_len,
+                max_prompt_len=max_prompt_len,
+                subquery_start_loc=subquery_start_loc,
+                seq_start_loc=seq_start_loc,
+                context_lens=context_lens,
+                block_tables=block_tables,
+                use_cuda_graph=use_cuda_graph,
+                )
+
             broadcast_tensor_dict(metadata_dict, src=0)
 
             # Broadcast decode attn metadata for mixed batch type.
@@ -660,29 +724,50 @@ class ModelRunner:
                 metadata_dict = decode_attn_metadata.asdict_zerocopy()
                 broadcast_tensor_dict(metadata_dict, src=0)
         else:
-            metadata_dict = broadcast_tensor_dict(src=0)
-            input_tokens = metadata_dict.pop("input_tokens")
-            input_positions = metadata_dict.pop("input_positions")
-            slot_mapping = metadata_dict.pop("slot_mapping")
-            num_prefills = metadata_dict.pop("num_prefills")
-            selected_token_indices = metadata_dict.pop(
-                "selected_token_indices")
-            lora_mapping = metadata_dict.pop("lora_mapping")
-            lora_requests = metadata_dict.pop("lora_requests")
-            multi_modal_input = metadata_dict.pop("multi_modal_input")
-            num_prefill_tokens = metadata_dict.pop("num_prefill_tokens")
-            num_decode_tokens = metadata_dict.pop("num_decode_tokens")
-            batch_type = metadata_dict.pop("batch_type")
+            metadata_dict: MetaData = broadcast_tensor_dict(MetaData, src=0)
+            input_tokens = metadata_dict.input_tokens
+            input_positions = metadata_dict.input_positions
+            slot_mapping = metadata_dict.slot_mapping
+            num_prefills = metadata_dict.num_prefills
+            selected_token_indices = metadata_dict.selected_token_indices
+            lora_mapping = metadata_dict.lora_mapping
+            lora_requests = metadata_dict.lora_requests
+            multi_modal_input = metadata_dict.multi_modal_input
+            num_prefill_tokens = metadata_dict.num_prefill_tokens
+            num_decode_tokens = metadata_dict.num_decode_tokens
+            batch_type = metadata_dict.batch_type
 
             # Create an attention metadata.
             prefill_attn_metadata = None
             decode_attn_metadata = None
             if batch_type == BatchType.PREFILL or batch_type == BatchType.MIXED:
                 prefill_attn_metadata = self.attn_backend.make_metadata(
-                    **metadata_dict)
+                    is_prompt=metadata_dict.is_prompt,
+                    prompt_lens=metadata_dict.prompt_lens,
+                    prompt_lens_tensor=metadata_dict.prompt_lens_tensor,
+                    max_subquery_len=metadata_dict.max_subquery_len,
+                    max_context_len=metadata_dict.max_context_len,
+                    max_prompt_len=metadata_dict.max_prompt_len,
+                    subquery_start_loc=metadata_dict.subquery_start_loc,
+                    seq_start_loc=metadata_dict.seq_start_loc,
+                    context_lens=metadata_dict.context_lens,
+                    block_tables=metadata_dict.block_tables,
+                    use_cuda_graph=metadata_dict.use_cuda_graph,
+                    )
             else:
                 decode_attn_metadata = self.attn_backend.make_metadata(
-                    **metadata_dict)
+                    is_prompt=metadata_dict.is_prompt,
+                    prompt_lens=metadata_dict.prompt_lens,
+                    prompt_lens_tensor=metadata_dict.prompt_lens_tensor,
+                    max_subquery_len=metadata_dict.max_subquery_len,
+                    max_context_len=metadata_dict.max_context_len,
+                    max_prompt_len=metadata_dict.max_prompt_len,
+                    subquery_start_loc=metadata_dict.subquery_start_loc,
+                    seq_start_loc=metadata_dict.seq_start_loc,
+                    context_lens=metadata_dict.context_lens,
+                    block_tables=metadata_dict.block_tables,
+                    use_cuda_graph=metadata_dict.use_cuda_graph,
+                    )
             sampling_metadata = SamplingMetadata(
                 seq_groups=None,
                 selected_token_indices=selected_token_indices,
