@@ -175,8 +175,8 @@ def broadcast_tensor_dict(
                 end_indx = start_indx + value.nelement() * value.element_size()
                 metadata_list.append(
                     (key, TensorMetadata(value.dtype, value.size(), start_indx, end_indx)))
-                start_indx = end_indx
                 buffer_views.append((value.view(-1).view(dtype=torch.uint8), start_indx, end_indx))
+                start_indx = end_indx
                 if end_indx % 8 != 0:
                     # align start to 8 bytes
                     start_indx += 8 - end_indx % 8
