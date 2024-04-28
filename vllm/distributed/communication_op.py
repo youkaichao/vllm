@@ -1,4 +1,3 @@
-import io
 from collections import namedtuple
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -142,13 +141,14 @@ def broadcast_object_list(obj_list: List[Any],
 TensorMetadata = namedtuple("TensorMetadata", ["dtype", "size"])
 
 
-def broadcast_device_data(
+def broadcast_tensor_dict(
     tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None,
     src: int = 0,
     group: Optional[ProcessGroup] = None,
 ) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
     """Broadcast the input tensor dictionary."""
     group = group or torch.distributed.group.WORLD
+    cpu_group = group or get_cpu_world_group()
     ranks = torch.distributed.get_process_group_ranks(group)
     assert src in ranks, f"Invalid src rank ({src})"
 
@@ -174,7 +174,7 @@ def broadcast_device_data(
                 metadata_list.append((key, value))
         torch.distributed.broadcast_object_list([metadata_list],
                                                 src=src,
-                                                group=group)
+                                                group=cpu_group)
         async_handles = []
         for key, value in metadata_list:
             if isinstance(value, TensorMetadata):
@@ -191,7 +191,7 @@ def broadcast_device_data(
         recv_metadata_list = [None]
         torch.distributed.broadcast_object_list(recv_metadata_list,
                                                 src=src,
-                                                group=group)
+                                                group=cpu_group)
         assert recv_metadata_list[0] is not None
         tensor_dict = {}
         async_handles = []
@@ -210,61 +210,4 @@ def broadcast_device_data(
                 tensor_dict[key] = value
         for async_handle in async_handles:
             async_handle.wait()
-    return tensor_dict
-
-
-def broadcast_cpu_data(
-    tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None,
-    src: int = 0,
-    group: Optional[ProcessGroup] = None,
-) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
-    """Broadcast the input tensor dictionary."""
-    group = group or get_cpu_world_group()
-    ranks = torch.distributed.get_process_group_ranks(group)
-    assert src in ranks, f"Invalid src rank ({src})"
-
-    # Bypass the function if we are using only 1 GPU.
-    world_size = torch.distributed.get_world_size(group=group)
-    if world_size == 1:
-        return tensor_dict
-
-    rank = torch.distributed.get_rank()
-    len_of_data = torch.tensor([0], dtype=torch.int64)
-    if rank == src:
-        byte_stream = io.BytesIO()
-        torch.save(tensor_dict, byte_stream)
-        buffer = byte_stream.getbuffer()
-        byte_tensor = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
-        len_of_data[0] = len(byte_tensor)
-        torch.distributed.broadcast(len_of_data, src=src, group=group)
-        torch.distributed.broadcast(byte_tensor, src=src, group=group)
-    else:
-        torch.distributed.broadcast(len_of_data, src=src, group=group)
-        buffer = bytearray(len_of_data.item())
-        byte_tensor = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
-        torch.distributed.broadcast(byte_tensor, src=src, group=group)
-        buffer = io.BytesIO(memoryview(buffer).tobytes())
-        tensor_dict = torch.load(buffer)
-    return tensor_dict
-
-
-def broadcast_tensor_dict(
-    tensor_dict: Optional[Dict[Any, Union[torch.Tensor, Any]]] = None,
-    src: int = 0,
-    group: Optional[ProcessGroup] = None,
-) -> Optional[Dict[Any, Union[torch.Tensor, Any]]]:
-    device_data = {}
-    cpu_data = {}
-    if tensor_dict is not None:
-        for key, value in tensor_dict.items():
-            if isinstance(value, torch.Tensor) and value.is_cuda:
-                device_data[key] = value
-            else:
-                cpu_data[key] = value
-        broadcast_cpu_data(cpu_data, src=src, group=group)
-        broadcast_device_data(device_data, src=src, group=group)
-    else:
-        cpu_data = broadcast_cpu_data(src=src, group=group)
-        device_data = broadcast_device_data(src=src, group=group)
-    tensor_dict = {**cpu_data, **device_data}
     return tensor_dict
