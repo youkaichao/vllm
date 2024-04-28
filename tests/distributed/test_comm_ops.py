@@ -64,6 +64,15 @@ def all_gather_test_worker(tensor_parallel_size: int, rank: int,
         t = tensor_model_parallel_all_gather(t, all_gather_dimension)
         assert torch.allclose(t, expected)
 
+import dataclasses
+from vllm.types import EfficientPickleDataclass
+@dataclasses.dataclass
+class TestMetaData(EfficientPickleDataclass):
+    a: Optional[torch.Tensor] = None
+    b: Optional[torch.Tensor] = None
+    c: str = ""
+    d: List[int] = dataclasses.field(default_factory=list)
+    e: Dict[str, int] = dataclasses.field(default_factory=dict)
 
 @ray.remote(num_gpus=1, max_calls=1)
 def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
@@ -76,27 +85,21 @@ def broadcast_tensor_dict_test_worker(tensor_parallel_size: int, rank: int,
     torch.cuda.set_device(device)
     init_test_distributed_environment(1, tensor_parallel_size, rank,
                                       distributed_init_port)
-    test_dict = {
-        "a": torch.arange(8, dtype=torch.float32, device="cuda"),
-        "b": torch.arange(16, dtype=torch.int8, device="cuda"),
-        "c": "test",
-        "d": [1, 2, 3],
-        "e": {
-            "a": 1,
-            "b": 2
-        },
-    }
-
+    test_dict = TestMetaData(a=torch.arange(8, dtype=torch.float32, device="cuda"),
+                                b=torch.arange(16, dtype=torch.int8, device="cuda"),
+                                c="test",
+                                d=[1, 2, 3],
+                                e={"a": 1, "b": 2})
     if rank == 0:
-        broadcast_tensor_dict(test_dict, src=0)
+        test_dict = broadcast_tensor_dict(test_dict, src=0)
     else:
-        recv_dict = broadcast_tensor_dict(src=0)
+        recv_dict = broadcast_tensor_dict(TestMetaData, src=0)
         assert len(recv_dict) == len(test_dict)
-        assert torch.allclose(recv_dict["a"], test_dict["a"])
-        assert torch.allclose(recv_dict["b"], test_dict["b"])
-        assert recv_dict["c"] == test_dict["c"]
-        assert recv_dict["d"] == test_dict["d"]
-        assert recv_dict["e"] == test_dict["e"]
+        assert torch.allclose(recv_dict.a, test_dict.a)
+        assert torch.allclose(recv_dict.b, test_dict.b)
+        assert recv_dict.c == test_dict.c
+        assert recv_dict.d == test_dict.d
+        assert recv_dict.e == test_dict.e
 
 
 @pytest.mark.skipif(torch.cuda.device_count() < 2,
