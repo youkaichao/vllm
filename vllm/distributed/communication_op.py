@@ -1,6 +1,7 @@
 from collections import namedtuple
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import pickle
 import torch
 from torch.distributed import ProcessGroup
 
@@ -136,6 +137,40 @@ def broadcast_object_list(obj_list: List[Any],
     # Broadcast.
     torch.distributed.broadcast_object_list(obj_list, src=src, group=group)
     return obj_list
+
+
+def broadcast_object(obj: Any,
+                          src: int = 0,
+                          group: Optional[ProcessGroup] = None) -> Any:
+    """Broadcast the input object if the pickled object size is less than 1024 bytes."""
+    group = group or get_cpu_world_group()
+    ranks = torch.distributed.get_process_group_ranks(group)
+    assert src in ranks, f"Invalid src rank ({src})"
+
+    MAX_BYTES_AFTER_PICKLE = 1024
+
+    # Bypass the function if we are using only 1 GPU.
+    world_size = torch.distributed.get_world_size(group=group)
+    if world_size == 1:
+        return obj
+    rank = torch.distributed.get_rank()
+    buffer = bytearray(MAX_BYTES_AFTER_PICKLE)
+    if rank == src:
+        buffer = pickle.dumps(obj)
+        assert len(buffer) < MAX_BYTES_AFTER_PICKLE, f"Object size after pickle {len(buffer)} is too large for broadcast"
+        # pad to MAX_BYTES_AFTER_PICKLE bytes
+        # pickle format itself knows when to stop, so we can just pad with spaces
+        buffer = buffer + b' ' * (MAX_BYTES_AFTER_PICKLE - len(buffer) % MAX_BYTES_AFTER_PICKLE)
+        buffer = bytearray(buffer)
+        data = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
+    else:
+        data = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
+    # Broadcast.
+    torch.distributed.broadcast(data, src=src, group=group)
+    if rank == src:
+        return obj
+    else:
+        return pickle.loads(memoryview(buffer).tobytes())
 
 
 TensorMetadata = namedtuple("TensorMetadata", ["dtype", "size", "start_indx", "end_indx"])
