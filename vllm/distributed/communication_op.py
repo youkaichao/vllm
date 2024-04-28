@@ -138,7 +138,7 @@ def broadcast_object_list(obj_list: List[Any],
     return obj_list
 
 
-TensorMetadata = namedtuple("TensorMetadata", ["dtype", "size"])
+TensorMetadata = namedtuple("TensorMetadata", ["dtype", "size", "start_indx", "end_indx"])
 
 
 def broadcast_tensor_dict(
@@ -160,6 +160,9 @@ def broadcast_tensor_dict(
     rank = torch.distributed.get_rank()
     if rank == src:
         metadata_list: List[Tuple[Any, Any]] = []
+        start_indx = 0
+        end_indx = 0
+        buffer_views = []
         assert isinstance(
             tensor_dict,
             dict), (f"Expecting a dictionary, got {type(tensor_dict)}")
@@ -168,46 +171,35 @@ def broadcast_tensor_dict(
                 assert value.is_cuda, (
                     f"Tensor {key}: {value} is not on cuda. Currently we only "
                     f"support broadcasting tensors on cuda.")
+                end_indx = start_indx + value.nelement() * value.element_size()
                 metadata_list.append(
-                    (key, TensorMetadata(value.dtype, value.size())))
+                    (key, TensorMetadata(value.dtype, value.size(), start_indx, end_indx)))
+                start_indx = end_indx
+                buffer_views.append(value.view(-1).view(dtype=torch.uint8))
             else:
                 metadata_list.append((key, value))
-        torch.distributed.broadcast_object_list([metadata_list],
-                                                src=src,
-                                                group=cpu_group)
-        async_handles = []
-        for key, value in metadata_list:
-            if isinstance(value, TensorMetadata):
-                tensor = tensor_dict[key]
-                async_handles.append(
-                    torch.distributed.broadcast(tensor,
-                                                src=src,
-                                                group=group,
-                                                async_op=True))
-        for async_handle in async_handles:
-            async_handle.wait()
-
+        if buffer_views:
+            total_buffer = torch.cat(buffer_views)
+            torch.distributed.broadcast_object_list([metadata_list],
+                                                    src=src,
+                                                    group=cpu_group)
+            torch.distributed.broadcast(total_buffer, src=src, group=group)
+            del total_buffer
     else:
         recv_metadata_list = [None]
         torch.distributed.broadcast_object_list(recv_metadata_list,
                                                 src=src,
                                                 group=cpu_group)
         assert recv_metadata_list[0] is not None
+        total_buffer_size = max([value.end_indx for key, value in recv_metadata_list[0] if isinstance(value, TensorMetadata)], default=0)
+        if total_buffer_size > 0:
+            total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
+            torch.distributed.broadcast(total_buffer, src=src, group=group)
         tensor_dict = {}
-        async_handles = []
         for key, value in recv_metadata_list[0]:
             if isinstance(value, TensorMetadata):
-                tensor = torch.empty(value.size,
-                                     dtype=value.dtype,
-                                     device="cuda")
-                async_handle = torch.distributed.broadcast(tensor,
-                                                           src=src,
-                                                           async_op=True,
-                                                           group=group)
-                async_handles.append(async_handle)
+                tensor = total_buffer[value.start_indx:value.end_indx].view(value.size).view(dtype=value.dtype)
                 tensor_dict[key] = tensor
             else:
                 tensor_dict[key] = value
-        for async_handle in async_handles:
-            async_handle.wait()
     return tensor_dict
