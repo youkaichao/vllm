@@ -169,11 +169,10 @@ def broadcast_tensor_dict(
     else:
         torch.distributed.broadcast(len_of_data, src=src, group=group)
         buffer = bytearray(len_of_data.item())
-        byte_storage = torch.ByteStorage._from_buffer(buffer)
-        byte_tensor = torch.ByteTensor(byte_storage)
+        byte_tensor = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
         torch.distributed.broadcast(byte_tensor, src=src, group=group)
         from safetensors.torch import load
+        tensor_dict = load(memoryview(buffer).tobytes())
         device = f"cuda:{torch.cuda.current_device()}"
-        with torch.device(device):
-            tensor_dict = load(buffer)
+        tensor_dict = {k: v.to(device) for k, v in tensor_dict.items()}
     return tensor_dict
