@@ -44,7 +44,7 @@ class EfficientPickleDataclass:
             # launch copy kernel first, then broadcast metadata, then broadcast data
             # hoping the copy kernel can overlap with metadata broadcast
             for view, start_indx, end_indx in buffer_views:
-                total_buffer[start_indx:end_indx].copy_(view)
+                total_buffer[start_indx:end_indx].copy_(view, non_blocking=True)
         return total_buffer, state
 
     def setstate(self, total_buffer, state):
