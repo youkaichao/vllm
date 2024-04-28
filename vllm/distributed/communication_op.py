@@ -160,6 +160,7 @@ def broadcast_tensor_dict(
     rank = torch.distributed.get_rank()
     if rank == src:
         metadata_list: List[Tuple[Any, Any]] = []
+        # index in bytes
         start_indx = 0
         end_indx = 0
         buffer_views = []
@@ -176,6 +177,11 @@ def broadcast_tensor_dict(
                     (key, TensorMetadata(value.dtype, value.size(), start_indx, end_indx)))
                 start_indx = end_indx
                 buffer_views.append(value.view(-1).view(dtype=torch.uint8))
+                if end_indx % 8 != 0:
+                    # align to 8 bytes
+                    start_indx += 8 - end_indx % 8
+                    # dummy tensor to align to 8 bytes
+                    buffer_views.append(torch.empty(8 - end_indx % 8, dtype=torch.uint8, device="cuda"))
             else:
                 metadata_list.append((key, value))
         if buffer_views:
