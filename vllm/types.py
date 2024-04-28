@@ -1,4 +1,5 @@
 import dataclasses
+import torch
 
 @dataclasses.dataclass
 class TensorMetadata:
