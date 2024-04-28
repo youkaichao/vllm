@@ -233,9 +233,9 @@ class Worker(WorkerBase):
             assert blocks_to_copy is not None
             data = CacheSwapMetaData(num_seq_groups, blocks_to_swap_in,
                                      blocks_to_swap_out, blocks_to_copy)
-            data = broadcast_tensor_dict(data, src=0)
+            data = broadcast_tensor_dict(data, src=0, pickle_max_bytes=256)
         else:
-            data = broadcast_tensor_dict(CacheSwapMetaData, src=0)
+            data = broadcast_tensor_dict(CacheSwapMetaData, src=0, pickle_max_bytes=256)
             num_seq_groups = data.num_seq_groups
             blocks_to_swap_in = data.blocks_to_swap_in
             blocks_to_swap_out = data.blocks_to_swap_out
