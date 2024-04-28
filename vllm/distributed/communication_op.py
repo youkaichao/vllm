@@ -159,8 +159,10 @@ def broadcast_tensor_dict(
     rank = torch.distributed.get_rank()
     len_of_data = torch.tensor([0], dtype=torch.int64)
     if rank == src:
-        from safetensors.torch import save
-        buffer = save(tensor_dict)
+        import io
+        byte_stream = io.BytesIO()
+        torch.save(tensor_dict, byte_stream)
+        buffer = byte_stream.getbuffer()
         byte_storage = torch.ByteStorage._from_buffer(buffer)
         byte_tensor = torch.ByteTensor(byte_storage)
         len_of_data[0] = len(byte_tensor)
@@ -171,8 +173,7 @@ def broadcast_tensor_dict(
         buffer = bytearray(len_of_data.item())
         byte_tensor = torch.frombuffer(memoryview(buffer), dtype=torch.uint8)
         torch.distributed.broadcast(byte_tensor, src=src, group=group)
-        from safetensors.torch import load
-        tensor_dict = load(memoryview(buffer).tobytes())
         device = f"cuda:{torch.cuda.current_device()}"
-        tensor_dict = {k: v.to(device) for k, v in tensor_dict.items()}
+        buffer = io.BytesIO(memoryview(buffer).tobytes())
+        tensor_dict = torch.load(buffer, map_location=device)
     return tensor_dict
