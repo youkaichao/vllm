@@ -209,6 +209,7 @@ def broadcast_tensor_dict(
     else:
         state = broadcast_object(src=src, group=cpu_group, pickle_max_bytes=pickle_max_bytes)
         total_buffer_size = max([value.end_indx for value in state if isinstance(value, TensorMetadata)], default=0)
+        total_buffer_size = EfficientPickleDataclass.align_total_buffer_size(total_buffer_size)
         total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
         if total_buffer_size > 0:
             torch.distributed.broadcast(total_buffer, src=src, group=group)

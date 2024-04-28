@@ -39,13 +39,20 @@ class EfficientPickleDataclass:
                     # align start to 8 bytes
                     start_indx += 8 - end_indx % 8
             state.append(value)
-        total_buffer = torch.empty(start_indx, dtype=torch.uint8, device="cuda")
+        total_buffer_size = self.align_total_buffer_size(start_indx)
+        total_buffer = torch.empty(total_buffer_size, dtype=torch.uint8, device="cuda")
         if buffer_views:
             # launch copy kernel first, then broadcast metadata, then broadcast data
             # hoping the copy kernel can overlap with metadata broadcast
             for view, start_indx, end_indx in buffer_views:
                 total_buffer[start_indx:end_indx].copy_(view, non_blocking=True)
         return total_buffer, state
+
+    @staticmethod
+    def align_total_buffer_size(original_size):
+        if original_size % 1024 != 0:
+            return original_size + 1024 - original_size % 1024
+        return original_size
 
     def setstate(self, total_buffer, state):
         fields = dataclasses.fields(self)
