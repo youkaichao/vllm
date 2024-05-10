@@ -1,5 +1,4 @@
 import multiprocessing
-import os
 
 import pytest
 import torch
@@ -8,9 +7,8 @@ from vllm.distributed.communication_op import (  # noqa
     graph_capture_mode, tensor_model_parallel_all_reduce)
 from vllm.distributed.device_communicators.pynccl import PyNcclCommunicator
 from vllm.distributed.device_communicators.pynccl_wrapper import NCCLLibrary
-from vllm.distributed.parallel_state import (ensure_model_parallel_initialized,
-                                             init_distributed_environment)
-from vllm.utils import update_environment_variables
+from vllm.distributed.parallel_state import ensure_model_parallel_initialized
+from vllm.test_utils import mp_fn_wrapper
 
 
 def distributed_run(fn, world_size):
@@ -35,22 +33,7 @@ def distributed_run(fn, world_size):
         assert p.exitcode == 0
 
 
-def worker_fn_wrapper(fn):
-    # `multiprocessing.Process` cannot accept environment variables directly
-    # so we need to pass the environment variables as arguments
-    # and update the environment variables in the function
-    def wrapped_fn(env):
-        update_environment_variables(env)
-        local_rank = os.environ['LOCAL_RANK']
-        device = torch.device(f"cuda:{local_rank}")
-        torch.cuda.set_device(device)
-        init_distributed_environment()
-        fn()
-
-    return wrapped_fn
-
-
-@worker_fn_wrapper
+@mp_fn_wrapper
 def worker_fn():
     pynccl_comm = PyNcclCommunicator()
     tensor = torch.ones(16, 1024, 1024,
@@ -67,7 +50,7 @@ def test_pynccl():
     distributed_run(worker_fn, 2)
 
 
-@worker_fn_wrapper
+@mp_fn_wrapper
 def multiple_tp_worker_fn():
     device = torch.device(f"cuda:{torch.distributed.get_rank()}")
     groups = [
@@ -98,7 +81,7 @@ def test_pynccl_multiple_tp():
     distributed_run(multiple_tp_worker_fn, 4)
 
 
-@worker_fn_wrapper
+@mp_fn_wrapper
 def multiple_tp_with_vllm_worker_fn():
     device = torch.device(f"cuda:{torch.distributed.get_rank()}")
     ensure_model_parallel_initialized(2, 2)
@@ -124,7 +107,7 @@ def test_pynccl_multiple_tp_with_vllm():
     distributed_run(multiple_tp_with_vllm_worker_fn, 4)
 
 
-@worker_fn_wrapper
+@mp_fn_wrapper
 def worker_fn_with_cudagraph():
     with torch.no_grad():
         graph = torch.cuda.CUDAGraph()

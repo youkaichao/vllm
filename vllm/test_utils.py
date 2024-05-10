@@ -1,8 +1,11 @@
+import os
+
 import ray
+import torch
 
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
-from vllm.utils import get_open_port
+from vllm.utils import get_open_port, update_environment_variables
 
 
 def init_test_distributed_environment(
@@ -39,3 +42,18 @@ def multi_process_tensor_parallel(
     ray.get(refs)
 
     ray.shutdown()
+
+
+def mp_fn_wrapper(fn):
+    # `multiprocessing.Process` cannot accept environment variables directly
+    # so we need to pass the environment variables as arguments
+    # and update the environment variables in the function
+    def wrapped_fn(env):
+        update_environment_variables(env)
+        local_rank = os.environ['LOCAL_RANK']
+        device = torch.device(f"cuda:{local_rank}")
+        torch.cuda.set_device(device)
+        init_distributed_environment()
+        fn()
+
+    return wrapped_fn
