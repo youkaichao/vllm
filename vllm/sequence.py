@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 
 from vllm.block import LogicalTokenBlock
@@ -630,7 +631,7 @@ class SequenceGroupMetadata:
         is_prompt: bool,
         seq_data: Dict[int, SequenceData],
         sampling_params: SamplingParams,
-        block_tables: Dict[int, List[int]],
+        block_tables: Dict[int, np.ndarray],
         do_sample: bool = True,
         pooling_params: Optional[PoolingParams] = None,
         token_chunk_size: Optional[int] = None,

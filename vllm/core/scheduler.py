@@ -6,6 +6,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
+import numpy as np
+
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
 from vllm.core.policy import Policy, PolicyFactory
@@ -959,12 +961,13 @@ class Scheduler:
             # seq_id -> SequenceData
             seq_data: Dict[int, SequenceData] = {}
             # seq_id -> physical block numbers
-            block_tables: Dict[int, List[int]] = {}
+            block_tables: Dict[int, np.ndarray] = {}
 
             for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
                 seq_id = seq.seq_id
                 seq_data[seq_id] = seq.data
-                block_tables[seq_id] = self.block_manager.get_block_table(seq)
+                block_tables[seq_id] = np.array(
+                    self.block_manager.get_block_table(seq), dtype=np.int64)
                 self.block_manager.access_all_blocks_in_seq(seq, now)
 
             common_computed_block_nums = (
