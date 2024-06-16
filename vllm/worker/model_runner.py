@@ -255,7 +255,7 @@ class ModelRunner:
         """
         input_tokens: List[int] = []
         input_positions: List[int] = []
-        slot_mapping: List[int] = []
+        slot_mapping_to_cat: List[torch.Tensor] = []
         lora_index_mapping: List[int] = []
         lora_prompt_mapping: List[int] = []
         lora_requests: Set[LoRARequest] = set()
@@ -265,7 +265,7 @@ class ModelRunner:
         decode_seq_lens: List[int] = []
         context_lens: List[int] = []
         query_lens: List[int] = []
-        block_tables: List[List[int]] = []
+        block_tables: List[torch.Tensor] = []
         multi_modal_kwargs_list: Dict[str,
                                       List[torch.Tensor]] = defaultdict(list)
         decode_only = True
@@ -405,10 +405,10 @@ class ModelRunner:
                             paged_kv_last_page_len.append(last_page_len)
                     else:
                         # Only happens when memory profiling runs.
-                        block_table = []
+                        block_table = torch.empty(0, dtype=torch.long)
                 else:
                     # Prefill without chunked prefill or memory profiling.
-                    block_table = []
+                    block_table = torch.empty(0, dtype=torch.long)
                 block_tables.append(block_table)
 
                 seq_lens.append(sliding_seq_len)
@@ -459,7 +459,9 @@ class ModelRunner:
                     # initialized yet. In this case, we just use a dummy
                     # slot mapping.
                     # In embeddings, the block tables are {seq_id: None}.
-                    slot_mapping.extend([_PAD_SLOT_ID] * seq_len)
+                    slot_mapping_to_cat.append(
+                        torch.empty(seq_len,
+                                    dtype=torch.int64).fill_(_PAD_SLOT_ID))
                     continue
 
                 # Compute the slot mapping.
@@ -483,15 +485,15 @@ class ModelRunner:
                     # to save memory.
                     start_idx = max(0, query_len - self.sliding_window)
 
-                for i in range(context_len, seq_len):
-                    if i < start_idx:
-                        slot_mapping.append(_PAD_SLOT_ID)
-                        continue
-
-                    block_number = block_table[i // self.block_size]
-                    block_offset = i % self.block_size
-                    slot = block_number * self.block_size + block_offset
-                    slot_mapping.append(slot)
+                index = np.arange(start=context_len, stop=seq_len)
+                mask = index >= start_idx
+                masked_index = index[mask]
+                d = torch.empty(seq_len - context_len,
+                                dtype=np.int64).fill_(_PAD_SLOT_ID)
+                block_starts = block_table[masked_index //
+                                           self.block_size] * self.block_size
+                d[mask] = block_starts + masked_index % self.block_size
+                slot_mapping_to_cat.append(d)
 
         batch_size = len(input_tokens)
         max_query_len = max(query_lens)
@@ -508,10 +510,12 @@ class ModelRunner:
         if use_captured_graph:
             graph_batch_size = _get_graph_batch_size(batch_size)
             assert graph_batch_size >= batch_size
+            slot_mapping_to_cat.append(
+                torch.empty(graph_batch_size - batch_size,
+                            dtype=torch.int64).fill_(_PAD_SLOT_ID))
             for _ in range(graph_batch_size - batch_size):
                 input_tokens.append(0)
                 input_positions.append(0)
-                slot_mapping.append(_PAD_SLOT_ID)
                 seq_lens.append(1)
                 block_tables.append([])
                 lora_index_mapping.append(0)
@@ -556,9 +560,8 @@ class ModelRunner:
         input_positions_tensor = torch.tensor(input_positions,
                                               dtype=torch.long,
                                               device=self.device)
-        slot_mapping_tensor = torch.tensor(slot_mapping,
-                                           dtype=torch.long,
-                                           device=self.device)
+        slot_mapping = torch.cat(slot_mapping_to_cat, dim=0)
+        slot_mapping_tensor = slot_mapping.to(self.device)
 
         if self.attn_backend.get_name() == "flashinfer":
             if not hasattr(self, "flashinfer_workspace_buffer"):
