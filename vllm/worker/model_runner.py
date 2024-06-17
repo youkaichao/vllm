@@ -464,7 +464,7 @@ class ModelRunner:
                     # slot mapping.
                     # In embeddings, the block tables are {seq_id: None}.
                     slot_mapping_to_cat.append(
-                        torch.full(seq_len,
+                        torch.full((seq_len, ),
                                    _PAD_SLOT_ID,
                                    dtype=torch.int64,
                                    device="cpu"))
@@ -496,7 +496,7 @@ class ModelRunner:
                                      device="cpu")
                 mask = index >= start_idx
                 masked_index = index[mask]
-                d = torch.full(seq_len - context_len,
+                d = torch.full((seq_len - context_len, ),
                                _PAD_SLOT_ID,
                                dtype=torch.long,
                                device="cpu")
