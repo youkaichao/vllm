@@ -527,7 +527,7 @@ class ModelRunner:
             # [max batch size, max context len // block size].
             input_block_tables = self.graph_block_tables[:batch_size]
             for i, block_table in enumerate(block_tables):
-                if block_table:
+                if len(block_table):
                     input_block_tables[i, :len(block_table)] = block_table
             block_tables = torch.tensor(input_block_tables, device=self.device)
         else:
