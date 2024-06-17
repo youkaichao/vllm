@@ -521,8 +521,10 @@ class ModelRunner:
             graph_batch_size = _get_graph_batch_size(batch_size)
             assert graph_batch_size >= batch_size
             slot_mapping_to_cat.append(
-                torch.empty(graph_batch_size - batch_size,
-                            dtype=torch.long).fill_(_PAD_SLOT_ID))
+                torch.full((graph_batch_size - batch_size, ),
+                           _PAD_SLOT_ID,
+                           device="cpu",
+                           dtype=torch.long))
             for _ in range(graph_batch_size - batch_size):
                 input_tokens.append(0)
                 input_positions.append(0)
