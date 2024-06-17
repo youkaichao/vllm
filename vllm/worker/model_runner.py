@@ -25,7 +25,7 @@ from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import SamplerOutput, SequenceData, SequenceGroupMetadata
 from vllm.utils import (CudaMemoryProfiler, get_kv_cache_torch_dtype, is_hip,
-                        is_pin_memory_available, make_tensor_with_pad)
+                        is_pin_memory_available, make_torch_tensor_with_pad)
 
 logger = init_logger(__name__)
 
@@ -533,7 +533,7 @@ class ModelRunner:
         else:
             max_block_table_len = max(
                 len(block_table) for block_table in block_tables)
-            block_tables = make_tensor_with_pad(
+            block_tables = make_torch_tensor_with_pad(
                 block_tables,
                 max_len=max_block_table_len,
                 pad=0,
