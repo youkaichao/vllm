@@ -544,7 +544,7 @@ def make_tensor_with_pad(
 
 
 def make_torch_tensor_with_pad(
-    x: List[torch.Tensor],
+    x: List[Optional[torch.Tensor]],
     max_len: int,
     pad: int,
     dtype: torch.dtype,
@@ -557,6 +557,8 @@ def make_torch_tensor_with_pad(
     """
     padded_x = torch.full((len(x), max_len), pad, dtype=dtype, device="cpu")
     for ind, blocktb in enumerate(x):
+        if blocktb is None:
+            continue
         assert len(blocktb) <= max_len
         padded_x[ind, :len(blocktb)] = blocktb
     return padded_x.to(device=device)

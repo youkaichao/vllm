@@ -265,7 +265,7 @@ class ModelRunner:
         decode_seq_lens: List[int] = []
         context_lens: List[int] = []
         query_lens: List[int] = []
-        block_tables: List[torch.Tensor] = []
+        block_tables: List[Optional[torch.Tensor]] = []
         multi_modal_kwargs_list: Dict[str,
                                       List[torch.Tensor]] = defaultdict(list)
         decode_only = True
@@ -405,14 +405,10 @@ class ModelRunner:
                             paged_kv_last_page_len.append(last_page_len)
                     else:
                         # Only happens when memory profiling runs.
-                        block_table = torch.empty(0,
-                                                  dtype=torch.long,
-                                                  device="cpu")
+                        block_table = None
                 else:
                     # Prefill without chunked prefill or memory profiling.
-                    block_table = torch.empty(0,
-                                              dtype=torch.long,
-                                              device="cpu")
+                    block_table = None
                 block_tables.append(block_table)
 
                 seq_lens.append(sliding_seq_len)
@@ -539,12 +535,13 @@ class ModelRunner:
             # [max batch size, max context len // block size].
             input_block_tables = self.graph_block_tables[:batch_size]
             for i, block_table in enumerate(block_tables):
-                if len(block_table):
+                if block_table is not None:
                     input_block_tables[i, :len(block_table)] = block_table
             block_tables = torch.tensor(input_block_tables, device=self.device)
         else:
             max_block_table_len = max(
-                len(block_table) for block_table in block_tables)
+                len(block_table) if block_table is not None else 0
+                for block_table in block_tables)
             block_tables = make_torch_tensor_with_pad(
                 block_tables,
                 max_len=max_block_table_len,
