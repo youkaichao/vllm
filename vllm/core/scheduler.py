@@ -967,7 +967,9 @@ class Scheduler:
                 seq_id = seq.seq_id
                 seq_data[seq_id] = seq.data
                 block_tables[seq_id] = torch.tensor(
-                    self.block_manager.get_block_table(seq), dtype=torch.long)
+                    self.block_manager.get_block_table(seq),
+                    dtype=torch.long,
+                    device="cpu")
                 self.block_manager.access_all_blocks_in_seq(seq, now)
 
             common_computed_block_nums = (

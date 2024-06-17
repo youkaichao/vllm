@@ -405,10 +405,14 @@ class ModelRunner:
                             paged_kv_last_page_len.append(last_page_len)
                     else:
                         # Only happens when memory profiling runs.
-                        block_table = torch.empty(0, dtype=torch.long)
+                        block_table = torch.empty(0,
+                                                  dtype=torch.long,
+                                                  device="cpu")
                 else:
                     # Prefill without chunked prefill or memory profiling.
-                    block_table = torch.empty(0, dtype=torch.long)
+                    block_table = torch.empty(0,
+                                              dtype=torch.long,
+                                              device="cpu")
                 block_tables.append(block_table)
 
                 seq_lens.append(sliding_seq_len)
@@ -460,8 +464,10 @@ class ModelRunner:
                     # slot mapping.
                     # In embeddings, the block tables are {seq_id: None}.
                     slot_mapping_to_cat.append(
-                        torch.empty(seq_len,
-                                    dtype=torch.int64).fill_(_PAD_SLOT_ID))
+                        torch.full(seq_len,
+                                   _PAD_SLOT_ID,
+                                   dtype=torch.int64,
+                                   device="cpu"))
                     continue
 
                 # Compute the slot mapping.
@@ -485,11 +491,15 @@ class ModelRunner:
                     # to save memory.
                     start_idx = max(0, query_len - self.sliding_window)
 
-                index = np.arange(start=context_len, stop=seq_len)
+                index = torch.arange(start=context_len,
+                                     end=seq_len,
+                                     device="cpu")
                 mask = index >= start_idx
                 masked_index = index[mask]
-                d = torch.empty(seq_len - context_len,
-                                dtype=torch.long).fill_(_PAD_SLOT_ID)
+                d = torch.full(seq_len - context_len,
+                               _PAD_SLOT_ID,
+                               dtype=torch.long,
+                               device="cpu")
                 block_starts = block_table[masked_index //
                                            self.block_size] * self.block_size
                 d[mask] = block_starts + masked_index % self.block_size
