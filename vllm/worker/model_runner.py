@@ -489,7 +489,7 @@ class ModelRunner:
                 mask = index >= start_idx
                 masked_index = index[mask]
                 d = torch.empty(seq_len - context_len,
-                                dtype=np.int64).fill_(_PAD_SLOT_ID)
+                                dtype=torch.long).fill_(_PAD_SLOT_ID)
                 block_starts = block_table[masked_index //
                                            self.block_size] * self.block_size
                 d[mask] = block_starts + masked_index % self.block_size
@@ -512,7 +512,7 @@ class ModelRunner:
             assert graph_batch_size >= batch_size
             slot_mapping_to_cat.append(
                 torch.empty(graph_batch_size - batch_size,
-                            dtype=torch.int64).fill_(_PAD_SLOT_ID))
+                            dtype=torch.long).fill_(_PAD_SLOT_ID))
             for _ in range(graph_batch_size - batch_size):
                 input_tokens.append(0)
                 input_positions.append(0)
