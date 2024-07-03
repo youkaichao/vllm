@@ -78,6 +78,8 @@ class LLM:
             When a sequence has context length larger than this, we fall back
             to eager mode.
         disable_custom_all_reduce: See ParallelConfig
+        pipeline_parallel_size: The number of pipeline stages to use for
+            distributed execution with pipeline parallelism.
         **kwargs: Arguments for :class:`~vllm.EngineArgs`. (See
             :ref:`engine_args`)
     
@@ -117,6 +119,7 @@ class LLM:
         max_context_len_to_capture: Optional[int] = None,
         max_seq_len_to_capture: int = 8192,
         disable_custom_all_reduce: bool = False,
+        pipeline_parallel_size: int = 1,
         **kwargs,
     ) -> None:
         if "disable_log_stats" not in kwargs:
@@ -139,6 +142,7 @@ class LLM:
             max_context_len_to_capture=max_context_len_to_capture,
             max_seq_len_to_capture=max_seq_len_to_capture,
             disable_custom_all_reduce=disable_custom_all_reduce,
+            pipeline_parallel_size=pipeline_parallel_size,
             **kwargs,
         )
         self.llm_engine = LLMEngine.from_engine_args(
