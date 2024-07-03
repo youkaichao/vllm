@@ -276,10 +276,10 @@ class ModelConfig:
                 "Pipeline parallelism is only supported for the following "
                 f" architectures: {_PP_SUPPORTED_MODELS}.")
 
-        if total_num_hidden_layers % pipeline_parallel_size != 0:
+        if total_num_hidden_layers < pipeline_parallel_size:
             raise ValueError(
                 f"Total number of hidden layers ({total_num_hidden_layers}) "
-                "must be divisible by pipeline parallel size "
+                "must be larger than the pipeline parallel size "
                 f"({pipeline_parallel_size}).")
 
         if self.quantization == "bitsandbytes" and (
