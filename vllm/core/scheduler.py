@@ -8,7 +8,6 @@ from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
-from vllm.core.policy import Policy, PolicyFactory
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.prompt_adapter.request import PromptAdapterRequest
@@ -399,7 +398,6 @@ class Scheduler:
         running_queue: deque,
         budget: SchedulingBudget,
         curr_loras: Optional[Set[int]],
-        policy: Policy,
         enable_chunking: bool = False,
     ) -> Tuple[deque, SchedulerRunningOutputs]:
         """Schedule sequence groups that are running.
@@ -408,12 +406,11 @@ class Scheduler:
 
         Args:
             running_queue: The queue that contains running requests (i.e.,
-                decodes). The given arguments are NOT in-place modified.
+                decodes). The given arguments are in-place modified.
             budget: The scheduling budget. The argument is in-place updated
                 when any decodes are preempted.
             curr_loras: Currently batched lora request ids. The argument is
                 in-place updated when any decodes are preempted.
-            policy: The sorting policy to sort running_queue.
             enable_chunking: If True, seq group can be chunked and only a
                 chunked number of tokens are scheduled  if
                 `budget.num_batched_tokens` has not enough capacity to schedule
@@ -434,10 +431,6 @@ class Scheduler:
 
         # NOTE(woosuk): Preemption happens only when there is no available slot
         # to keep all the sequence groups in the RUNNING state.
-        # In this case, the policy is responsible for deciding which sequence
-        # groups to preempt.
-        now = time.time()
-        running_queue = policy.sort_by_priority(now, running_queue)
         while running_queue:
             seq_group = running_queue[0]
             num_running_tokens = self._get_num_new_tokens(
@@ -516,7 +509,6 @@ class Scheduler:
         swapped_queue: deque,
         budget: SchedulingBudget,
         curr_loras: Optional[Set[int]],
-        policy: Policy,
         enable_chunking: bool = False,
     ) -> Tuple[deque, SchedulerSwappedInOutputs]:
         """Schedule sequence groups that are swapped out.
@@ -527,12 +519,11 @@ class Scheduler:
 
         Args:
             swapped_queue: The queue that contains swapped out requests.
-                The given arguments are NOT in-place modified.
+                The given arguments are in-place modified.
             budget: The scheduling budget. The argument is in-place updated
                 when any requests are swapped in.
             curr_loras: Currently batched lora request ids. The argument is
                 in-place updated when any requests are swapped in.
-            policy: The sorting policy to sort swapped_queue.
             enable_chunking: If True, seq group can be chunked and only a
                 chunked number of tokens are scheduled  if
                 `budget.num_batched_tokens` has not enough capacity to schedule
@@ -547,8 +538,6 @@ class Scheduler:
         blocks_to_copy: List[Tuple[int, int]] = []
         decode_seq_groups: List[ScheduledSequenceGroup] = []
         prefill_seq_groups: List[ScheduledSequenceGroup] = []
-        now = time.time()
-        swapped_queue = policy.sort_by_priority(now, swapped_queue)
         infeasible_seq_groups: List[SequenceGroup] = []
 
         leftover_swapped: Deque[SequenceGroup] = deque()
@@ -795,24 +784,19 @@ class Scheduler:
             remaining_waiting, prefills = self._schedule_prefills(
                 self.waiting, budget, curr_loras, enable_chunking=False)
 
-        fcfs_policy = PolicyFactory.get_policy(policy_name="fcfs")
         # Don't schedule decodes if prefills are scheduled.
         # NOTE: If `_schedule_prefills` doesn't enable chunking, self.running
         # only contains decode requests, not chunked prefills.
         if len(prefills.seq_groups) == 0:
             remaining_running, running_scheduled = self._schedule_running(
-                self.running,
-                budget,
-                curr_loras,
-                fcfs_policy,
-                enable_chunking=False)
+                self.running, budget, curr_loras, enable_chunking=False)
 
             # If any sequence group is preempted, do not swap in any sequence
             # group. because it means there's no slot for new running requests.
             if len(running_scheduled.preempted) + len(
                     running_scheduled.swapped_out) == 0:
                 remaining_swapped, swapped_in = self._schedule_swapped(
-                    self.swapped, budget, curr_loras, fcfs_policy)
+                    self.swapped, budget, curr_loras)
 
         assert (budget.num_batched_tokens <=
                 self.scheduler_config.max_num_batched_tokens)
@@ -883,20 +867,15 @@ class Scheduler:
             self.swapped, SchedulerSwappedInOutputs.create_empty())
 
         # Decoding should be always scheduled first by fcfs.
-        fcfs_policy = PolicyFactory.get_policy(policy_name="fcfs")
         remaining_running, running_scheduled = self._schedule_running(
-            self.running,
-            budget,
-            curr_loras,
-            fcfs_policy,
-            enable_chunking=True)
+            self.running, budget, curr_loras, enable_chunking=True)
 
         # Schedule swapped out requests.
         # If preemption happens, it means we don't have space for swap-in.
         if len(running_scheduled.preempted) + len(
                 running_scheduled.swapped_out) == 0:
             remaining_swapped, swapped_in = self._schedule_swapped(
-                self.swapped, budget, curr_loras, fcfs_policy)
+                self.swapped, budget, curr_loras)
 
         # Schedule new prefills.
         remaining_waiting, prefills = self._schedule_prefills(
