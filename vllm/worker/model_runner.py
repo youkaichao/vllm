@@ -1,3 +1,4 @@
+import array
 import dataclasses
 import gc
 import time
@@ -503,27 +504,36 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
         create on-device tensors.
         """
         # Combine and flatten intermediate data.
-        input_tokens = flatten_2d_lists([
-            flatten_2d_lists(inter_data.input_tokens)
-            for inter_data in self.inter_data_list
-        ])
-        if not input_tokens:
+        input_tokens_array = array.array('l')
+        for inter_data in self.inter_data_list:
+            for input_tokens in inter_data.input_tokens:
+                input_tokens_array.extend(input_tokens)
+        if len(input_tokens_array) == 0:
             # This may happen when all prefill requests hit
             # prefix caching and there is no decode request.
             return self.model_input_cls()
-        input_positions = flatten_2d_lists([
-            flatten_2d_lists(inter_data.input_positions)
-            for inter_data in self.inter_data_list
-        ])
-        seq_lens = []
+
+        input_positions_array = array.array('l')
+        seq_lens_array = array.array('l')
         max_decode_seq_len = 0
+        query_lens_array = array.array('l')
+        multi_modal_inputs_list = []
         for inter_data in self.inter_data_list:
-            seq_lens.extend(inter_data.seq_lens)
+            for input_positions in inter_data.input_positions:
+                input_positions_array.extend(input_positions)
+            seq_lens_array.extend(inter_data.seq_lens)
+            query_lens_array.extend(inter_data.query_lens)
             if not inter_data.is_prompt:
                 max_decode_seq_len = max(max_decode_seq_len,
                                          max(inter_data.seq_lens))
-        query_lens = flatten_2d_lists(
-            [inter_data.query_lens for inter_data in self.inter_data_list])
+
+            if inter_data.multi_modal_inputs is not None:
+                multi_modal_inputs_list.append(inter_data.multi_modal_inputs)
+
+        # Multi-modal data.
+        multi_modal_kwargs = MultiModalInputs.batch(multi_modal_inputs_list,
+                                                    device=self.runner.device)
+
         # Mapping from request IDs to sequence IDs. Used for Jamba models
         # that manages the cache by itself.
         request_ids_to_seq_ids = {
@@ -531,7 +541,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
             for data in self.inter_data_list
         }
 
-        batch_size = len(input_tokens)
+        batch_size = len(input_positions_array)
         use_captured_graph = self._use_captured_graph(batch_size,
                                                       max_decode_seq_len)
 
@@ -546,21 +556,23 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
             batch_size = graph_batch_size
 
         # Tokens and positions.
-        input_tokens.extend([0] * cuda_graph_pad_size)
-        input_positions.extend([0] * cuda_graph_pad_size)
-        input_tokens_tensor = torch.tensor(input_tokens,
-                                           dtype=torch.long,
-                                           device=self.runner.device)
-        input_positions_tensor = torch.tensor(input_positions,
-                                              dtype=torch.long,
-                                              device=self.runner.device)
+        input_tokens_array.extend([0] * cuda_graph_pad_size)
+        input_positions_array.extend([0] * cuda_graph_pad_size)
+        input_tokens_tensor = torch.frombuffer(
+            input_tokens_array,
+            dtype=torch.long,
+        ).to(self.runner.device)
+        input_positions_tensor = torch.tensor(
+            input_positions_array,
+            dtype=torch.long,
+        ).to(self.runner.device)
 
         # Sequence and query lengths.
-        seq_lens.extend([1] * cuda_graph_pad_size)
+        seq_lens_array.extend([1] * cuda_graph_pad_size)
 
         # Attention metadata.
         attn_metadata = self.attn_metadata_builder.build(
-            seq_lens, query_lens, cuda_graph_pad_size, batch_size)
+            seq_lens_array, query_lens_array, cuda_graph_pad_size, batch_size)
 
         # LoRA data.
         lora_requests = set()
@@ -603,20 +615,12 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
                 prompt_adapter_prompt_mapping,
             )
 
-        # Multi-modal data.
-        multi_modal_inputs_list = [
-            data.multi_modal_inputs for data in self.inter_data_list
-            if data.multi_modal_inputs is not None
-        ]
-        multi_modal_kwargs = MultiModalInputs.batch(multi_modal_inputs_list,
-                                                    device=self.runner.device)
-
         return self.model_input_cls(
             input_tokens=input_tokens_tensor,
             input_positions=input_positions_tensor,
             attn_metadata=attn_metadata,
-            seq_lens=seq_lens,
-            query_lens=query_lens,
+            seq_lens=seq_lens_array,
+            query_lens=query_lens_array,
             lora_mapping=lora_mapping,
             lora_requests=lora_requests,
             multi_modal_kwargs=multi_modal_kwargs,
