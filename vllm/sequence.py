@@ -453,6 +453,7 @@ class SequenceGroup:
     ) -> None:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
+        self.seqs_list = list(seqs)
         self.sampling_params = sampling_params
         self.metrics = RequestMetrics(arrival_time=arrival_time,
                                       last_token_time=arrival_time,
@@ -467,7 +468,7 @@ class SequenceGroup:
         self.prompt_adapter_request = prompt_adapter_request
         self.encoder_seq = encoder_seq
         self.trace_headers = trace_headers
-        self._first_seq = next(iter(self.seqs_dict.values()))
+        self._first_seq = seqs[0]
 
     @property
     def prompt(self) -> Optional[str]:
@@ -557,8 +558,8 @@ class SequenceGroup:
         self,
         status: Optional[SequenceStatus] = None,
     ) -> List[Sequence]:
-        return list(self.seqs_dict.values()) if status is None else [
-            seq for seq in self.seqs_dict.values() if seq.status == status
+        return self.seqs_list if status is None else [
+            seq for seq in self.seqs_list if seq.status == status
         ]
 
     def is_encoder_decoder(self) -> bool:
@@ -568,16 +569,14 @@ class SequenceGroup:
         return self.encoder_seq
 
     def get_unfinished_seqs(self) -> List[Sequence]:
-        return [
-            seq for seq in self.seqs_dict.values() if not seq.is_finished()
-        ]
+        return [seq for seq in self.seqs_list if not seq.is_finished()]
 
     def get_finished_seqs(self) -> List[Sequence]:
-        return [seq for seq in self.seqs_dict.values() if seq.is_finished()]
+        return [seq for seq in self.seqs_list if seq.is_finished()]
 
     def update_num_computed_tokens(self, num_new_computed_tokens: int):
         """Update number of tokens computed so far."""
-        for seq in self.seqs_dict.values():
+        for seq in self.seqs_list:
             if not seq.is_finished():
                 seq.data.update_num_computed_tokens(num_new_computed_tokens)
 
@@ -592,7 +591,7 @@ class SequenceGroup:
         # Optimization. We don't need to call get_seqs if we don't need to
         # filter by states.
         if status is None:
-            return len(self.seqs_dict)
+            return len(self.seqs_list)
 
         return len(self.get_seqs(status))
 
@@ -611,11 +610,17 @@ class SequenceGroup:
         if seq.seq_id in self.seqs_dict:
             raise ValueError(f"Sequence {seq.seq_id} already exists.")
         self.seqs_dict[seq.seq_id] = seq
+        self.seqs_list.append(seq)
 
     def remove(self, seq_id: int) -> None:
         if seq_id not in self.seqs_dict:
             raise ValueError(f"Sequence {seq_id} not found.")
         del self.seqs_dict[seq_id]
+        # NOTE: this will be slow to remove from a list, but is only used
+        # in beam search, which is not performance critical.
+        self.seqs_list = [
+            seq for seq in self.seqs_list if seq.seq_id != seq_id
+        ]
 
     def is_finished(self) -> bool:
         return all(seq.is_finished() for seq in self.get_seqs())
@@ -627,7 +632,7 @@ class SequenceGroup:
     def __repr__(self) -> str:
         return (f"SequenceGroup(request_id={self.request_id}, "
                 f"sampling_params={self.sampling_params}, "
-                f"num_seqs={len(self.seqs_dict)})")
+                f"num_seqs={len(self.seqs_list)})")
 
 
 class SequenceGroupMetadata:
