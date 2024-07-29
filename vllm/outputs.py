@@ -103,17 +103,17 @@ class RequestOutput:
         if seq_group.sampling_params is None:
             raise ValueError(
                 "Sampling parameters are missing for a CompletionRequest.")
-        seqs = seq_group.get_seqs()
+        seqs = list(enumerate(seq_group.get_seqs()))
         if len(seqs) == 1:
             top_n_seqs = seqs
         else:
             # Get the top-n sequences.
             n = seq_group.sampling_params.n
             if seq_group.sampling_params.use_beam_search:
-                sorting_key = lambda seq: seq.get_beam_search_score(
+                sorting_key = lambda item: item[1].get_beam_search_score(
                     seq_group.sampling_params.length_penalty)
             else:
-                sorting_key = lambda seq: seq.get_cumulative_logprob()
+                sorting_key = lambda item: item[1].get_cumulative_logprob()
             sorted_seqs = sorted(seqs, key=sorting_key, reverse=True)
             top_n_seqs = sorted_seqs[:n]
 
@@ -124,13 +124,13 @@ class RequestOutput:
         include_logprobs = seq_group.sampling_params.logprobs is not None
         text_buffer_length = seq_group.sampling_params.output_text_buffer_length
         outputs = [
-            CompletionOutput(seqs.index(seq),
+            CompletionOutput(i,
                              seq.get_output_text_to_return(text_buffer_length),
                              seq.get_output_token_ids(),
                              seq.get_cumulative_logprob(),
                              seq.output_logprobs if include_logprobs else None,
                              SequenceStatus.get_finished_reason(seq.status),
-                             seq.stop_reason) for seq in top_n_seqs
+                             seq.stop_reason) for i, seq in top_n_seqs
         ]
 
         # Every sequence in the sequence group should have the same prompt.
