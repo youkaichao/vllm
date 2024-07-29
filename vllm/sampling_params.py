@@ -140,6 +140,16 @@ class SamplingParams:
         logits_processors: Optional[List[LogitsProcessor]] = None,
         truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None,
     ) -> None:
+
+        self._args = (n, best_of, presence_penalty, frequency_penalty,
+                      repetition_penalty, temperature, top_p, top_k, min_p,
+                      seed, use_beam_search, length_penalty, early_stopping,
+                      stop, stop_token_ids, include_stop_str_in_output,
+                      ignore_eos, max_tokens, min_tokens, logprobs,
+                      prompt_logprobs, detokenize, skip_special_tokens,
+                      spaces_between_special_tokens, logits_processors,
+                      truncate_prompt_tokens)
+
         self.n = n
         self.best_of = best_of if best_of is not None else n
         self.presence_penalty = presence_penalty
@@ -200,6 +210,9 @@ class SamplingParams:
                 self._verify_greedy_sampling()
         # eos_token_id is added to this by the engine
         self.all_stop_token_ids = set(self.stop_token_ids)
+
+    def __reduce__(self) -> Any:
+        return self.__class__, self._args
 
     def _verify_args(self) -> None:
         if self.n < 1:
