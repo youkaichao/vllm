@@ -369,7 +369,7 @@ def _random_sample(
         seq_group has do_sample=False, tuple contains ([], [])
     """
     # Find the maximum best_of value of the prompt phase requests.
-    random_samples = random_samples.cpu()
+    random_samples = random_samples.cpu().tolist()
     sample_idx = 0
     results: SampleResultType = []
     for seq_group in selected_seq_groups:
@@ -384,13 +384,14 @@ def _random_sample(
         if is_prompt:
             # Prompt phase.
             parent_ids = [0] * sampling_params.best_of
-            next_token_ids = random_samples[
-                sample_idx, :sampling_params.best_of].tolist()
+            next_token_ids = random_samples[sample_idx][:sampling_params.
+                                                        best_of]
         else:
             # Generation phase.
             parent_ids = list(range(num_parent_seqs))
-            next_token_ids = random_samples[sample_idx:sample_idx +
-                                            num_parent_seqs, 0].tolist()
+            next_token_ids = []
+            for i in range(sample_idx, sample_idx + num_parent_seqs):
+                next_token_ids.append(random_samples[i][0])
         results.append((next_token_ids, parent_ids))
         sample_idx += num_parent_seqs
     return results
