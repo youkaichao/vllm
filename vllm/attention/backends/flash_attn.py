@@ -278,8 +278,8 @@ class FlashAttentionMetadata(AttentionMetadata):
     # TODO(woosuk): Move `use_cuda_graph` out since it's unrelated to attention.
     use_cuda_graph: bool
 
-    prefill_metadata: Optional["FlashAttentionMetadata"] = None
-    decode_metadata: Optional["FlashAttentionMetadata"] = None
+    prefill_metadata: Optional["FlashAttentionPrefillMetadata"] = None
+    decode_metadata: Optional["FlashAttentionDecodeMetadata"] = None
 
     def __post_init__(self):
         self.has_prefill = self.num_prefills > 0
@@ -291,7 +291,7 @@ class FlashAttentionMetadata(AttentionMetadata):
             assert self.block_tables is not None
             assert self.seq_start_loc is not None
 
-            self.prefill_metadata = FlashAttentionMetadata(
+            self.prefill_metadata = FlashAttentionPrefillMetadata(
                 num_prefills=self.num_prefills,
                 num_prefill_tokens=self.num_prefill_tokens,
                 num_decode_tokens=0,
@@ -313,7 +313,7 @@ class FlashAttentionMetadata(AttentionMetadata):
         if self.has_decode:
             assert self.block_tables is not None
             assert self.seq_lens_tensor is not None
-            self.decode_metadata = FlashAttentionMetadata(
+            self.decode_metadata = FlashAttentionDecodeMetadata(
                 num_prefills=0,
                 num_prefill_tokens=0,
                 num_decode_tokens=self.num_decode_tokens,
@@ -382,6 +382,18 @@ class FlashAttentionMetadata(AttentionMetadata):
                                    seq_lens=self.seq_lens_tensor,
                                    slot_mapping=self.slot_mapping,
                                    block_tables=self.block_tables)
+
+
+class FlashAttentionPrefillMetadata(FlashAttentionMetadata):
+
+    def __post_init__(self):
+        pass
+
+
+class FlashAttentionDecodeMetadata(FlashAttentionMetadata):
+
+    def __post_init__(self):
+        pass
 
 
 class FlashAttentionMetadataBuilder(
