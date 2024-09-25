@@ -282,6 +282,7 @@ class FlashAttentionMetadata(AttentionMetadata):
     decode_metadata: Optional["FlashAttentionDecodeMetadata"] = None
 
     def __post_init__(self):
+        mixed_batch = self.num_prefills > 0 and self.num_decode_tokens > 0
         self.has_prefill = self.num_prefills > 0
         if self.has_prefill:
             assert self.seq_lens is not None
@@ -295,17 +296,24 @@ class FlashAttentionMetadata(AttentionMetadata):
                 num_prefills=self.num_prefills,
                 num_prefill_tokens=self.num_prefill_tokens,
                 num_decode_tokens=0,
-                slot_mapping=self.slot_mapping[:self.num_prefill_tokens],
-                seq_lens=self.seq_lens[:self.num_prefills],
-                seq_lens_tensor=self.seq_lens_tensor[:self.num_prefills],
+                slot_mapping=self.slot_mapping[:self.num_prefill_tokens]
+                if mixed_batch else self.slot_mapping,
+                seq_lens=self.seq_lens[:self.num_prefills]
+                if mixed_batch else self.seq_lens,
+                seq_lens_tensor=self.seq_lens_tensor[:self.num_prefills]
+                if mixed_batch else self.seq_lens_tensor,
                 max_query_len=self.max_query_len,
                 max_prefill_seq_len=self.max_prefill_seq_len,
                 max_decode_seq_len=0,
-                query_start_loc=self.query_start_loc[:self.num_prefills + 1],
-                seq_start_loc=self.seq_start_loc[:self.num_prefills + 1],
+                query_start_loc=self.query_start_loc[:self.num_prefills + 1]
+                if mixed_batch else self.query_start_loc,
+                seq_start_loc=self.seq_start_loc[:self.num_prefills + 1]
+                if mixed_batch else self.seq_start_loc,
                 context_lens_tensor=self.context_lens_tensor[:self.
-                                                             num_prefills],
-                block_tables=self.block_tables[:self.num_prefills],
+                                                             num_prefills]
+                if mixed_batch else self.context_lens_tensor,
+                block_tables=self.block_tables[:self.num_prefills]
+                if mixed_batch else self.block_tables,
                 use_cuda_graph=False,
             )
 
@@ -317,16 +325,19 @@ class FlashAttentionMetadata(AttentionMetadata):
                 num_prefills=0,
                 num_prefill_tokens=0,
                 num_decode_tokens=self.num_decode_tokens,
-                slot_mapping=self.slot_mapping[self.num_prefill_tokens:],
+                slot_mapping=self.slot_mapping[self.num_prefill_tokens:]
+                if mixed_batch else self.slot_mapping,
                 seq_lens=None,
-                seq_lens_tensor=self.seq_lens_tensor[self.num_prefills:],
+                seq_lens_tensor=self.seq_lens_tensor[self.num_prefills:]
+                if mixed_batch else self.seq_lens_tensor,
                 max_query_len=None,
                 max_prefill_seq_len=0,
                 max_decode_seq_len=self.max_decode_seq_len,
                 query_start_loc=None,
                 seq_start_loc=None,
                 context_lens_tensor=None,
-                block_tables=self.block_tables[self.num_prefills:],
+                block_tables=self.block_tables[self.num_prefills:]
+                if mixed_batch else self.block_tables,
                 use_cuda_graph=self.use_cuda_graph,
             )
 
