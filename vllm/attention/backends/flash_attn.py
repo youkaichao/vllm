@@ -702,20 +702,22 @@ class FlashAttentionImpl(AttentionImpl):
                 v_scale,
             )
 
-        num_prefill_tokens = attn_metadata.num_prefill_tokens
-        num_decode_tokens = attn_metadata.num_decode_tokens
-        assert key.shape[0] == num_prefill_tokens + num_decode_tokens
-        assert value.shape[0] == num_prefill_tokens + num_decode_tokens
-
-        # Query for decode. KV is not needed because it is already cached.
-        decode_query = query[num_prefill_tokens:]
-        # QKV for prefill.
-        query = query[:num_prefill_tokens]
-        key = key[:num_prefill_tokens]
-        value = value[:num_prefill_tokens]
-
-        assert query.shape[0] == num_prefill_tokens
-        assert decode_query.shape[0] == num_decode_tokens
+        decode_query: Optional[torch.Tensor] = None
+        if not attn_metadata.has_decode:
+            # pure prefill run
+            pass
+        elif not attn_metadata.has_prefill:
+            # pure decode run
+            decode_query = query
+        else:
+            # chunked prefill, mixed prefill and decode
+            num_prefill_tokens = attn_metadata.num_prefill_tokens
+            # Query for decode. KV is not needed because it is already cached.
+            decode_query = query[num_prefill_tokens:]
+            # QKV for prefill.
+            query = query[:num_prefill_tokens]
+            key = key[:num_prefill_tokens]
+            value = value[:num_prefill_tokens]
 
         prefill_output: Optional[torch.Tensor] = None
         decode_output: Optional[torch.Tensor] = None
@@ -762,6 +764,7 @@ class FlashAttentionImpl(AttentionImpl):
 
         if decode_meta := attn_metadata.decode_metadata:
             # Decoding run.
+            assert decode_query is not None
             decode_output = torch.ops.vllm.flash_attn_with_kvcache(
                 decode_query.unsqueeze(1),
                 key_cache,
@@ -776,9 +779,9 @@ class FlashAttentionImpl(AttentionImpl):
 
         if prefill_output is None:
             assert decode_output is not None
-            return decode_output.view(num_decode_tokens, hidden_size)
+            return decode_output.view(-1, hidden_size)
         if decode_output is None:
             assert prefill_output is not None
-            return prefill_output.view(num_prefill_tokens, hidden_size)
+            return prefill_output.view(-1, hidden_size)
         output = torch.cat([prefill_output, decode_output], dim=0)
-        return output.view(num_tokens, hidden_size)
+        return output.view(-1, hidden_size)
