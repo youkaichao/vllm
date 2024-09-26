@@ -152,7 +152,8 @@ def wrap_inductor(graph, example_inputs, max_autotune=False):
     from torch._inductor import config
     current_config = config.shallow_copy_dict()
     from torch._inductor.compile_fx import compile_fx
-    current_config['max_autotune'] = max_autotune
+
+    # current_config['max_autotune'] = max_autotune
     current_config['post_grad_custom_post_pass'] = fix_functionalization
     return compile_fx(graph, example_inputs, config_patches=current_config)
 
@@ -160,7 +161,6 @@ def wrap_inductor(graph, example_inputs, max_autotune=False):
 def vllm_backend(graph, example_inputs, specialized_sizes=None):
 
     specialized_sizes = specialized_sizes or []
-    specialized_sizes = [x for x in specialized_sizes if x <= 32]
     graph_for_specialized_size = {x: None for x in specialized_sizes}
 
     # this is the first compilation, we will compile a graph with
