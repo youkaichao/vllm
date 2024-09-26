@@ -826,7 +826,7 @@ def unified_attention(
     window_size: Optional[List[int]] = None,
     alibi_slopes: Optional[torch.Tensor] = None,
     logits_soft_cap: Optional[float] = None,
-):
+) -> torch.Tensor:
     num_tokens, hidden_size = query.shape
     # Reshape the query, key, and value tensors.
     query = query.view(-1, num_heads, head_size)
@@ -939,6 +939,8 @@ def unified_attention(
 @unified_attention.register_fake
 def _(
     query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
     num_heads: int,
     head_size: int,
     num_kv_heads: int,
@@ -950,5 +952,5 @@ def _(
     window_size: Optional[List[int]] = None,
     alibi_slopes: Optional[torch.Tensor] = None,
     logits_soft_cap: Optional[float] = None,
-):
+) -> torch.Tensor:
     return torch.empty_like(query)
