@@ -84,7 +84,7 @@ torch._dynamo.config.accumulated_cache_size_limit = 128
 class Wrapper(TorchCompileWrapperWithCustomDispatcher):
 
     def __init__(self, model, backend):
-        self.model = model
+        self.original_model = model
         self.compiled_callable = torch.compile(
             self.forward,
             fullgraph=envs.VLLM_TEST_DYNAMO_FULLGRAPH_CAPTURE,
@@ -99,8 +99,8 @@ class Wrapper(TorchCompileWrapperWithCustomDispatcher):
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
-        model_output = self.model(input_ids, positions, kv_caches,
-                                  attn_metadata, intermediate_tensors)
+        model_output = self.original_model(input_ids, positions, kv_caches,
+                                           attn_metadata, intermediate_tensors)
         return model_output
 
     def __call__(
@@ -126,6 +126,11 @@ class Wrapper(TorchCompileWrapperWithCustomDispatcher):
             model_output = self.forward(input_ids, positions, kv_caches,
                                         attn_metadata, intermediate_tensors)
         return model_output
+
+    def __getattr__(self, name):
+        # this function is only called when the attribute is not found in the
+        # object itself, so we can safely call getattr on the original model
+        return getattr(self.original_model, name)
 
 
 @dataclass(frozen=True)
@@ -1135,7 +1140,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
 
             # only change the model's __call__ method
             # this is the only function that gets compiled
-            self.model.__call__ = Wrapper(self.model, backend).__call__
+            self.model = Wrapper(self.model, backend)
 
     def save_sharded_state(
         self,
