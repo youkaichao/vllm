@@ -148,9 +148,45 @@ def fix_functionalization(graph: fx.Graph):
     #     print(graph.python_code(root_module="self", verbose=True).src, file=f)
 
 
-def vllm_backend(graph, example_inputs):
+def wrap_inductor(graph, example_inputs):
     from torch._inductor import config
     current_config = config.shallow_copy_dict()
     from torch._inductor.compile_fx import compile_fx
     current_config['post_grad_custom_post_pass'] = fix_functionalization
     return compile_fx(graph, example_inputs, config_patches=current_config)
+
+
+def vllm_backend(graph, example_inputs, specialized_sizes=None):
+
+    specialized_sizes = specialized_sizes or []
+    graph_for_symbolic_shape = None
+    graph_for_specialized_size = {x: None for x in specialized_sizes}
+
+    # this is the function we return to Dynamo to run finally
+    def f(*args, **kwargs):
+        bs = args[0].shape[0]
+
+        nonlocal graph_for_symbolic_shape, graph_for_specialized_size
+
+        if graph_for_symbolic_shape is None:
+            # this is the first compilation, we will compile a graph with
+            # dynamic shape, as the caller will mark first dimension as dynamic
+            graph_for_symbolic_shape = wrap_inductor(graph, args)
+
+            # the first compilation is for profiling, we directly run it
+            return graph_for_symbolic_shape(*args, **kwargs)
+
+        # we are running real workloads now
+        if bs in graph_for_specialized_size:
+            # this is the shape we want to specialize
+            specialized_graph = graph_for_specialized_size[bs]
+            if specialized_graph is None:
+                # we haven't compiled it yet
+                # compile and store the graph
+                graph_for_specialized_size[bs] = wrap_inductor(graph, args)
+            return graph_for_specialized_size[bs](*args, **kwargs)
+        else:
+            # we don't want to specialize this shape
+            return graph_for_symbolic_shape(*args, **kwargs)
+
+    return f
