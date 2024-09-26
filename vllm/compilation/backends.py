@@ -159,22 +159,30 @@ def wrap_inductor(graph, example_inputs):
 def vllm_backend(graph, example_inputs, specialized_sizes=None):
 
     specialized_sizes = specialized_sizes or []
-    graph_for_symbolic_shape = None
     graph_for_specialized_size = {x: None for x in specialized_sizes}
 
+    # this is the first compilation, we will compile a graph with
+    # dynamic shape, as the caller will mark first dimension as dynamic
+    graph_for_symbolic_shape = wrap_inductor(graph, example_inputs)
+
+    first_run = True
+
     # this is the function we return to Dynamo to run finally
-    def f(*args, **kwargs):
-        bs = args[0].shape[0]
+    def f(*args):
 
-        nonlocal graph_for_symbolic_shape, graph_for_specialized_size
+        # TODO: find a better way to determine the batch size
+        # it seems that the first argument is an integer rather than a tensor
+        for x in args:
+            if isinstance(x, torch.Tensor):
+                bs = x.shape[0]
+                break
 
-        if graph_for_symbolic_shape is None:
-            # this is the first compilation, we will compile a graph with
-            # dynamic shape, as the caller will mark first dimension as dynamic
-            graph_for_symbolic_shape = wrap_inductor(graph, args)
+        nonlocal graph_for_specialized_size, first_run
 
+        if first_run:
             # the first compilation is for profiling, we directly run it
-            return graph_for_symbolic_shape(*args, **kwargs)
+            first_run = False
+            return graph_for_symbolic_shape(*args)
 
         # we are running real workloads now
         if bs in graph_for_specialized_size:
@@ -184,9 +192,9 @@ def vllm_backend(graph, example_inputs, specialized_sizes=None):
                 # we haven't compiled it yet
                 # compile and store the graph
                 graph_for_specialized_size[bs] = wrap_inductor(graph, args)
-            return graph_for_specialized_size[bs](*args, **kwargs)
+            return graph_for_specialized_size[bs](*args)
         else:
             # we don't want to specialize this shape
-            return graph_for_symbolic_shape(*args, **kwargs)
+            return graph_for_symbolic_shape(*args)
 
     return f
