@@ -1138,6 +1138,16 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
 
         if envs.VLLM_TEST_DYNAMO_GRAPH_CAPTURE and supports_dynamo():
             from vllm.compilation.backends import vllm_backend
+            if not self.model_config.enforce_eager:
+                graph_batch_size = self.max_batchsize_to_capture
+                batch_size_capture_list = [
+                    bs for bs in _BATCH_SIZES_TO_CAPTURE
+                    if bs <= graph_batch_size
+                ]
+                from functools import partial
+                vllm_backend = partial(
+                    vllm_backend, specialized_sizes=batch_size_capture_list)
+
             from vllm.plugins import get_torch_compile_backend
             backend = get_torch_compile_backend() or vllm_backend
 
