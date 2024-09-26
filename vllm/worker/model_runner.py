@@ -130,6 +130,9 @@ class Wrapper(TorchCompileWrapperWithCustomDispatcher):
     def __getattr__(self, name):
         # this function is only called when the attribute is not found in the
         # object itself, so we can safely call getattr on the original model
+
+        # by delegating to the original model, we can access all the attributes
+        # and methods of the original model
         return getattr(self.original_model, name)
 
 
