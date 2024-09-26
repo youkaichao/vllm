@@ -148,10 +148,11 @@ def fix_functionalization(graph: fx.Graph):
     #     print(graph.python_code(root_module="self", verbose=True).src, file=f)
 
 
-def wrap_inductor(graph, example_inputs):
+def wrap_inductor(graph, example_inputs, max_autotune=False):
     from torch._inductor import config
     current_config = config.shallow_copy_dict()
     from torch._inductor.compile_fx import compile_fx
+    current_config['max_autotune'] = max_autotune
     current_config['post_grad_custom_post_pass'] = fix_functionalization
     return compile_fx(graph, example_inputs, config_patches=current_config)
 
@@ -159,11 +160,14 @@ def wrap_inductor(graph, example_inputs):
 def vllm_backend(graph, example_inputs, specialized_sizes=None):
 
     specialized_sizes = specialized_sizes or []
+    specialized_sizes = [x for x in specialized_sizes if x <= 32]
     graph_for_specialized_size = {x: None for x in specialized_sizes}
 
     # this is the first compilation, we will compile a graph with
     # dynamic shape, as the caller will mark first dimension as dynamic
-    graph_for_symbolic_shape = wrap_inductor(graph, example_inputs)
+    graph_for_symbolic_shape = wrap_inductor(graph,
+                                             example_inputs,
+                                             max_autotune=False)
 
     first_run = True
 
@@ -189,9 +193,11 @@ def vllm_backend(graph, example_inputs, specialized_sizes=None):
             # this is the shape we want to specialize
             specialized_graph = graph_for_specialized_size[bs]
             if specialized_graph is None:
+                print(f"compiling for {bs=}")
                 # we haven't compiled it yet
                 # compile and store the graph
-                graph_for_specialized_size[bs] = wrap_inductor(graph, args)
+                graph_for_specialized_size[bs] = wrap_inductor(
+                    graph, args, max_autotune=True)
             return graph_for_specialized_size[bs](*args)
         else:
             # we don't want to specialize this shape
