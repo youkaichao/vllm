@@ -18,6 +18,7 @@ import vllm.envs as envs
 from vllm.attention import AttentionMetadata, get_attn_backend
 from vllm.attention.backends.abstract import AttentionState
 from vllm.attention.backends.utils import CommonAttentionState
+from vllm.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
 from vllm.config import (CacheConfig, DeviceConfig, LoadConfig, LoRAConfig,
                          ModelConfig, ObservabilityConfig, ParallelConfig,
                          PromptAdapterConfig, SchedulerConfig)
@@ -78,6 +79,53 @@ TModelInputForGPU = TypeVar('TModelInputForGPU', bound="ModelInputForGPU")
 # For now, bump up cache limits for recompilations during CUDA graph warmups.
 torch._dynamo.config.cache_size_limit = 128
 torch._dynamo.config.accumulated_cache_size_limit = 128
+
+
+class Wrapper(TorchCompileWrapperWithCustomDispatcher):
+
+    def __init__(self, model, backend):
+        self.model = model
+        self.compiled_callable = torch.compile(
+            self.forward,
+            fullgraph=envs.VLLM_TEST_DYNAMO_FULLGRAPH_CAPTURE,
+            backend=backend)
+        super().__init__(compiled_callable=self.compiled_callable)
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        kv_caches: List[torch.Tensor],
+        attn_metadata: AttentionMetadata,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        model_output = self.model(input_ids, positions, kv_caches,
+                                  attn_metadata, intermediate_tensors)
+        return model_output
+
+    def __call__(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        kv_caches: List[torch.Tensor],
+        attn_metadata: AttentionMetadata,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        from vllm.attention.backends.flash_attn import set_global_metadata
+        set_global_metadata(attn_metadata)
+        if len(self.compiled_codes) < 1:
+            kv_caches = [
+                x if x is not None else torch.tensor([], dtype=torch.float32)
+                for x in kv_caches
+            ]
+            torch._dynamo.mark_dynamic(input_ids, 0)
+            torch._dynamo.mark_dynamic(positions, 0)
+            return self.compiled_callable(input_ids, positions, kv_caches,
+                                          attn_metadata, intermediate_tensors)
+        with self.dispatch_to_code(0):
+            model_output = self.forward(input_ids, positions, kv_caches,
+                                        attn_metadata, intermediate_tensors)
+        return model_output
 
 
 @dataclass(frozen=True)
@@ -1084,10 +1132,8 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
             from vllm.compilation.backends import vllm_backend
             from vllm.plugins import get_torch_compile_backend
             backend = get_torch_compile_backend() or vllm_backend
-            self.model = torch.compile(
-                self.model,
-                fullgraph=envs.VLLM_TEST_DYNAMO_FULLGRAPH_CAPTURE,
-                backend=backend)
+
+            self.model = Wrapper(self.model, backend)
 
     def save_sharded_state(
         self,
