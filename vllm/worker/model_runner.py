@@ -1138,8 +1138,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
             from vllm.plugins import get_torch_compile_backend
             backend = get_torch_compile_backend() or vllm_backend
 
-            # only change the model's __call__ method
-            # this is the only function that gets compiled
             self.model = Wrapper(self.model, backend)
 
     def save_sharded_state(
