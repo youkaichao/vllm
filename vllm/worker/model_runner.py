@@ -1617,6 +1617,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         if kv_caches[0].numel() == 0:
             from vllm.utils import GiB_bytes
             free_gpu_memory_before_execution = torch.cuda.mem_get_info()[0]
+            torch.cuda.memory._record_memory_history()
         hidden_or_intermediate_states = model_executable(
             input_ids=model_input.input_tokens,
             positions=model_input.input_positions,
@@ -1627,6 +1628,11 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                                          device=self.device),
             **seqlen_agnostic_kwargs)
         if kv_caches[0].numel() == 0:
+            try:
+                torch.cuda.memory._dump_snapshot("memory_activity.pickle")
+            except Exception as e:
+                logger.error(f"Failed to capture memory snapshot {e}")
+            torch.cuda.memory._record_memory_history(enabled=None)
             free_gpu_memory_after_execution = torch.cuda.mem_get_info()[0]
             reserved_memory = free_gpu_memory_before_execution - free_gpu_memory_after_execution
             logger.info("reserved memory for model forward activation: %s GiB",
