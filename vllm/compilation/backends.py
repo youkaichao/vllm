@@ -169,7 +169,7 @@ def wrap_inductor(graph, example_inputs, additional_inductor_config):
             "post_grad_custom_post_pass is already set in the config. "
             "Overwriting it with the fix_functionalization")
     current_config['post_grad_custom_post_pass'] = fix_functionalization
-    return compile_fx_inner(graph, example_inputs, **current_config)
+    return compile_fx_inner(graph, example_inputs)
 
 
 def vllm_backend(
