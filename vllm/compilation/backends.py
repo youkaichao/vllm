@@ -215,7 +215,7 @@ def vllm_backend(
         if first_run:
             # the first compilation is for profiling, we directly run it
             first_run = False
-            return graph_for_symbolic_shape(*args)
+            return graph_for_symbolic_shape(list(args))
 
         if runtime_shapes not in runtime_shapes_to_compile_flags:
             # we haven't seen this shape before
@@ -228,7 +228,7 @@ def vllm_backend(
 
         if not runtime_shapes_to_compile_flags[runtime_shapes]:
             # we don't need to specialize for this shape
-            return graph_for_symbolic_shape(*args)
+            return graph_for_symbolic_shape(list(args))
 
         if runtime_shapes not in runtime_shapes_to_compiled_graph:
             # we need to specialize for this shape, and we haven't compiled
@@ -237,7 +237,7 @@ def vllm_backend(
             runtime_shapes_to_compiled_graph[runtime_shapes] = wrap_inductor(
                 graph, args, additional_inductor_config)
 
-        return runtime_shapes_to_compiled_graph[runtime_shapes](*args)
+        return runtime_shapes_to_compiled_graph[runtime_shapes](list(args))
 
     return compiled_graph_wrapper
 
