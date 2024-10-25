@@ -160,7 +160,7 @@ def fix_functionalization(graph: fx.Graph):
 def wrap_inductor(graph, example_inputs, additional_inductor_config):
     from torch._inductor import config
     current_config = config.shallow_copy_dict()
-    from torch._inductor.compile_fx import compile_fx
+    from torch._inductor.compile_fx import compile_fx_inner
 
     if additional_inductor_config is not None:
         current_config.update(additional_inductor_config)
@@ -169,7 +169,7 @@ def wrap_inductor(graph, example_inputs, additional_inductor_config):
             "post_grad_custom_post_pass is already set in the config. "
             "Overwriting it with the fix_functionalization")
     current_config['post_grad_custom_post_pass'] = fix_functionalization
-    return compile_fx(graph, example_inputs, config_patches=current_config)
+    return compile_fx_inner(graph, example_inputs, **current_config)
 
 
 def vllm_backend(
@@ -266,4 +266,5 @@ def select_default_backend(level: int) -> Union[str, Callable]:
     backend = partial(vllm_backend,
                       additional_inductor_config=additional_configs)
 
-    return backend
+    from torch._dynamo.backends.common import aot_autograd
+    return aot_autograd(fw_compiler=backend)
