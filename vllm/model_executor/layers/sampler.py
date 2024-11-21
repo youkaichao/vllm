@@ -269,11 +269,11 @@ class Sampler(nn.Module):
             logits, sampling_tensors.temperatures.unsqueeze(dim=1))
 
         if do_top_p_top_k and flashinfer_top_k_top_p_sampling is None:
-            _apply_top_k_top_p(logits, sampling_tensors.top_ps,
-                               sampling_tensors.top_ks)
+            logits = _apply_top_k_top_p(logits, sampling_tensors.top_ps,
+                                        sampling_tensors.top_ks)
 
         if do_min_p:
-            _apply_min_p(logits, sampling_tensors.min_ps)
+            logits = _apply_min_p(logits, sampling_tensors.min_ps)
 
         probs, logprobs = probs_and_logprobs(logits)
 
@@ -423,7 +423,7 @@ def _apply_top_k_top_p(
     logits: torch.Tensor,
     p: torch.Tensor,
     k: torch.Tensor,
-):
+) -> torch.Tensor:
     logits_sort, logits_idx = logits.sort(dim=-1, descending=False)
 
     # Apply top-k.
@@ -442,17 +442,17 @@ def _apply_top_k_top_p(
     logits_sort.masked_fill_(top_p_mask, -float("inf"))
 
     # Re-sort the probabilities.
-    output_logits = torch.empty_like(logits_sort).scatter_(dim=-1,
-                                                           index=logits_idx,
-                                                           src=logits_sort)
-    logits.copy_(output_logits)
+    logits = torch.empty_like(logits_sort).scatter_(dim=-1,
+                                                    index=logits_idx,
+                                                    src=logits_sort)
+    return logits
 
 
 @torch.compile(dynamic=True)
 def _apply_min_p(
     logits: torch.Tensor,
     min_p: torch.Tensor,
-):
+) -> torch.Tensor:
     """
     Adapted from
     https://github.com/oobabooga/text-generation-webui/blob/3146124ec01f02c8fb1650a6517cf1b60b537aaf/modules/sampler_hijack.py#L16C17-L16C17
@@ -461,9 +461,9 @@ def _apply_min_p(
     top_probs, _ = probs.max(dim=-1, keepdim=True)
     scaled_min_p = min_p.unsqueeze_(dim=1) * top_probs
     tokens_to_remove = probs < scaled_min_p
-    output_logits = logits.masked_fill_(tokens_to_remove, -float("inf"))
+    logits = logits.masked_fill_(tokens_to_remove, -float("inf"))
 
-    output_logits.copy_(logits)
+    return logits
 
 
 @torch.compile(dynamic=True)
@@ -477,7 +477,8 @@ def convert_and_scale(
 
 
 @torch.compile(dynamic=True)
-def probs_and_logprobs(logits: torch.Tensor, ):
+def probs_and_logprobs(
+        logits: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     # We use float32 for probabilities and log probabilities.
     # Compute the probabilities.
     probs = torch.softmax(logits, dim=-1, dtype=torch.float)
