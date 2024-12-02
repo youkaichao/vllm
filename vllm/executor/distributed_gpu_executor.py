@@ -145,6 +145,7 @@ class DistributedGPUExecutor(GPUExecutor):
     def _run_workers(
         self,
         method: str,
+        func: Optional[Callable[..., Any]] = None,
         *args,
         async_run_tensor_parallel_workers_only: bool = False,
         max_concurrent_workers: Optional[int] = None,

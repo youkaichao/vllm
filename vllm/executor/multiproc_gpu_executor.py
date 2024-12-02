@@ -160,6 +160,7 @@ class MultiprocessingGPUExecutor(DistributedGPUExecutor):
     def _run_workers(
         self,
         method: str,
+        func: Optional[Callable[..., Any]] = None,
         *args,
         async_run_tensor_parallel_workers_only: bool = False,
         max_concurrent_workers: Optional[int] = None,
@@ -181,18 +182,21 @@ class MultiprocessingGPUExecutor(DistributedGPUExecutor):
         if async_run_tensor_parallel_workers_only:
             # Run only non-driver workers and just return futures.
             return [
-                worker.execute_method(method, *args, **kwargs)
+                worker.execute_method(method, func, *args, **kwargs)
                 for worker in self.non_driver_workers
             ]
 
         # Start all remote workers first.
         worker_outputs = [
-            worker.execute_method(method, *args, **kwargs)
+            worker.execute_method(method, func, *args, **kwargs)
             for worker in self.workers
         ]
 
-        driver_worker_method = getattr(self.driver_worker, method)
-        driver_worker_output = driver_worker_method(*args, **kwargs)
+        if func is None:
+            driver_worker_method = getattr(self.driver_worker, method)
+            driver_worker_output = driver_worker_method(*args, **kwargs)
+        else:
+            driver_worker_output = func(*args, **kwargs)
 
         # Get the results of the workers.
         return [driver_worker_output

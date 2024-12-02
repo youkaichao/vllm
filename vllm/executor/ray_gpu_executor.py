@@ -330,6 +330,7 @@ class RayGPUExecutor(DistributedGPUExecutor):
     def _run_workers(
         self,
         method: str,
+        func: Optional[Callable[..., Any]] = None,
         *args,
         async_run_tensor_parallel_workers_only: bool = False,
         all_args: Optional[List[Tuple[Any, ...]]] = None,

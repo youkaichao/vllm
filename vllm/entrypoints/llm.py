@@ -951,6 +951,31 @@ class LLM:
     def stop_profile(self) -> None:
         self.llm_engine.stop_profile()
 
+    def collective_rpc(self, method: str = "",
+                        func: Optional[Callable[..., Any]] = None,
+                        *args: Any, **kwargs) -> List[Any]:
+        """
+        Perform a collective RPC call to all the workers in the engine.
+        If func is None, it will look up the `method` attribute in the
+        worker and call it with the provided args and kwargs.
+        If func is provided, it will be serialized and sent to all workers
+        to execute the function with the provided args and kwargs.
+
+        NOTE: if you need to communicate large data, it is recommended to
+        set up a connection between the workers and use that connection
+        to send the data. Only use this method for sending the control
+        messages.
+        """
+        # using type instead of isinstance to check to avoid capturing
+        # inherited classes (MultiprocessingGPUExecutor)
+        if type(self.llm_engine.model_executor) == GPUExecutor:  # noqa: E721
+            if func is not None:
+                return [func(*args, **kwargs)]
+            worker_func = getattr(self.llm_engine.model_executor.driver_worker, method)
+            return [worker_func(*args, **kwargs)]
+        else:
+            self.llm_engine.model_executor._run_workers(method=method, func=func, *args, **kwargs)
+
     # LEGACY
     def _convert_v1_inputs(
         self,
