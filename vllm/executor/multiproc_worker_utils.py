@@ -11,6 +11,8 @@ from multiprocessing.process import BaseProcess
 from typing import (Any, Callable, Dict, Generic, List, Optional, TextIO,
                     TypeVar, Union)
 
+import cloudpickle
+
 import vllm.envs as envs
 from vllm.logger import init_logger
 
@@ -160,25 +162,26 @@ class ProcessWorkerWrapper:
         self.process.start()
 
     def _enqueue_task(self, future: Union[ResultFuture, asyncio.Future],
-                      method: str, args, kwargs):
+                      method: str, func, args, kwargs):
         task_id = uuid.uuid4()
         self.tasks[task_id] = future
         try:
-            self._task_queue.put((task_id, method, args, kwargs))
+            func = cloudpickle.dumps(func)
+            self._task_queue.put((task_id, method, func, args, kwargs))
         except SystemExit:
             raise
         except BaseException as e:
             del self.tasks[task_id]
             raise ChildProcessError("worker died") from e
 
-    def execute_method(self, method: str, *args, **kwargs):
+    def execute_method(self, method: str, func, *args, **kwargs):
         future: ResultFuture = ResultFuture()
-        self._enqueue_task(future, method, args, kwargs)
+        self._enqueue_task(future, method, func, args, kwargs)
         return future
 
-    async def execute_method_async(self, method: str, *args, **kwargs):
+    async def execute_method_async(self, method: str, func, *args, **kwargs):
         future = asyncio.get_running_loop().create_future()
-        self._enqueue_task(future, method, args, kwargs)
+        self._enqueue_task(future, method, func, args, kwargs)
         return await future
 
     def terminate_worker(self):
@@ -217,10 +220,14 @@ def _run_worker_process(
         for items in iter(task_queue.get, _TERMINATE):
             output = None
             exception = None
-            task_id, method, args, kwargs = items
+            task_id, method, func, args, kwargs = items
             try:
-                executor = getattr(worker, method)
-                output = executor(*args, **kwargs)
+                pickled_func = cloudpickle.loads(func)
+                if pickled_func is not None:
+                    output = pickled_func(*args, **kwargs)
+                else:
+                    executor = getattr(worker, method)
+                    output = executor(*args, **kwargs)
             except SystemExit:
                 raise
             except KeyboardInterrupt:

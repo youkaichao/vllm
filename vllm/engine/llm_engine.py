@@ -1918,9 +1918,11 @@ class LLMEngine:
         else:
             self.model_executor._run_workers("stop_profile")
 
-    def collective_rpc(self, method: str = "",
-                        func: Optional[Callable[..., Any]] = None,
-                        *args: Any, **kwargs) -> List[Any]:
+    def collective_rpc(self,
+                       method: str = "",
+                       func: Optional[Callable[..., Any]] = None,
+                       *args: Any,
+                       **kwargs) -> List[Any]:
 
         return self.model_executor.collective_rpc(method, *args)
 

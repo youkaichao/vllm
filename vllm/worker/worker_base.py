@@ -452,8 +452,10 @@ class WorkerWrapperBase:
         self.worker = worker_class(*args, **kwargs)
         assert self.worker is not None
 
-    def execute_method(self, method, *args, **kwargs):
+    def execute_method(self, method, func, *args, **kwargs):
         try:
+            if func is not None:
+                return func(*args, **kwargs)
             target = self if self.worker is None else self.worker
             executor = getattr(target, method)
             return executor(*args, **kwargs)

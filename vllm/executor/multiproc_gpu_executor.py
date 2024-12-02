@@ -1,7 +1,7 @@
 import asyncio
 import os
 from functools import partial
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 import torch
 
@@ -259,7 +259,7 @@ class MultiprocessingGPUExecutorAsync(MultiprocessingGPUExecutor,
 
     async def _start_worker_execution_loop(self):
         coros = [
-            worker.execute_method_async("start_worker_execution_loop")
+            worker.execute_method_async("start_worker_execution_loop", None)
             for worker in self.non_driver_workers
         ]
         return await asyncio.gather(*coros)

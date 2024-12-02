@@ -2,8 +2,8 @@ import itertools
 import json
 import warnings
 from contextlib import contextmanager
-from typing import (Any, ClassVar, Dict, List, Optional, Sequence, Tuple, Type,
-                    Union, cast, overload)
+from typing import (Any, Callable, ClassVar, Dict, List, Optional, Sequence,
+                    Tuple, Type, Union, cast, overload)
 
 from tqdm import tqdm
 
@@ -20,6 +20,7 @@ from vllm.entrypoints.chat_utils import (ChatCompletionMessageParam,
                                          apply_mistral_chat_template,
                                          parse_chat_messages,
                                          resolve_chat_template_content_format)
+from vllm.executor.gpu_executor import GPUExecutor
 from vllm.inputs import PromptType, SingletonPrompt, TextPrompt, TokensPrompt
 from vllm.inputs.parse import parse_and_batch_prompt
 from vllm.logger import init_logger
@@ -951,9 +952,11 @@ class LLM:
     def stop_profile(self) -> None:
         self.llm_engine.stop_profile()
 
-    def collective_rpc(self, method: str = "",
-                        func: Optional[Callable[..., Any]] = None,
-                        *args: Any, **kwargs) -> List[Any]:
+    def collective_rpc(self,
+                       method: str = "",
+                       func: Optional[Callable[..., Any]] = None,
+                       *args: Any,
+                       **kwargs) -> List[Any]:
         """
         Perform a collective RPC call to all the workers in the engine.
         If func is None, it will look up the `method` attribute in the
@@ -971,10 +974,12 @@ class LLM:
         if type(self.llm_engine.model_executor) == GPUExecutor:  # noqa: E721
             if func is not None:
                 return [func(*args, **kwargs)]
-            worker_func = getattr(self.llm_engine.model_executor.driver_worker, method)
+            worker_func = getattr(self.llm_engine.model_executor.driver_worker,
+                                  method)
             return [worker_func(*args, **kwargs)]
         else:
-            self.llm_engine.model_executor._run_workers(method=method, func=func, *args, **kwargs)
+            return self.llm_engine.model_executor._run_workers(
+                method, func, *args, **kwargs)
 
     # LEGACY
     def _convert_v1_inputs(

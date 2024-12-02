@@ -2,7 +2,7 @@ import asyncio
 import os
 from collections import defaultdict
 from itertools import islice, repeat
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import msgspec
 
@@ -377,7 +377,8 @@ class RayGPUExecutor(DistributedGPUExecutor):
         if async_run_tensor_parallel_workers_only:
             ray_workers = self.non_driver_workers
         ray_worker_outputs = [
-            worker.execute_method.remote(method, *worker_args, **worker_kwargs)
+            worker.execute_method.remote(method, func, *worker_args,
+                                         **worker_kwargs)
             for (worker, worker_args, worker_kwargs
                  ) in zip(ray_workers, all_worker_args, all_worker_kwargs)
         ]
@@ -397,7 +398,8 @@ class RayGPUExecutor(DistributedGPUExecutor):
             # Start the driver worker after all the ray workers.
             if not use_dummy_driver:
                 driver_worker_output = [
-                    self.driver_worker.execute_method(method, *driver_args,
+                    self.driver_worker.execute_method(method, func,
+                                                      *driver_args,
                                                       **driver_kwargs)
                 ]
             else:
@@ -405,7 +407,7 @@ class RayGPUExecutor(DistributedGPUExecutor):
                 driver_worker_output = [
                     ray.get(
                         self.driver_dummy_worker.execute_method.remote(
-                            method, *driver_args, **driver_kwargs))
+                            method, func, *driver_args, **driver_kwargs))
                 ]
 
         # Get the results of the ray workers.

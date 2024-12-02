@@ -1,6 +1,7 @@
 import asyncio
 from abc import abstractmethod
-from typing import Any, Awaitable, Dict, List, Optional, Set, Tuple, Union
+from typing import (Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple,
+                    Union)
 
 from vllm.executor.executor_base import ExecutorAsyncBase
 from vllm.executor.gpu_executor import GPUExecutor
