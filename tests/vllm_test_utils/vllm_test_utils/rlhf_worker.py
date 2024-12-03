@@ -7,8 +7,7 @@ from typing import List, Tuple
 
 
 class RLHFWorker(Worker):
-    def setup_connection(self,         host: str,
-        port: int,):
+    def setup_connection(self, host: str, port: int,):
         self.control_group = StatelessProcessGroup.create(
             host=host,
             port=port,
@@ -20,8 +19,8 @@ class RLHFWorker(Worker):
 
     def weights_iterator(self,):
         for name, metadata in self.weights_metadata:
-            tensor = torch.empty(size=metadata.size, dtype=metadata.dtype, device=torch.device(f"cuda:{self.local_rank}"))
-            self.data_group.broadcast(tensor, src=0)
+            tensor = torch.zeros(size=metadata.size, dtype=metadata.dtype, device=torch.device(f"cuda:{self.local_rank}"))
+            tensor = self.data_group.all_reduce(tensor)
             yield name, tensor
 
     def update_weights(self,):
