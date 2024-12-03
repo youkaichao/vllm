@@ -6,6 +6,7 @@ from vllm.distributed.parallel_state import TensorMetadata
 from vllm.distributed.device_communicators.pynccl import PyNcclCommunicator
 import os
 import ray
+import torch
 
 class TrainingWorker:
 
