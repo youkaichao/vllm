@@ -1750,7 +1750,7 @@ def memory_profiling(
 
     result.after_profile.measure()
     from vllm.distributed.parallel_state import get_world_group
-    rank = get_world_group().rank()
+    rank = get_world_group().rank_in_group
     filename = f"memory_snapshot_rank_{rank}.pickle"
     torch.cuda.memory._dump_snapshot(filename)
     print(f"Memory snapshot saved to {filename}")
