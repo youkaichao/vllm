@@ -1740,13 +1740,18 @@ def memory_profiling(
     result.weights_memory_in_bytes = weights_memory_in_bytes
 
     result.before_profile.measure()
-
+    torch.cuda.memory._record_memory_history(
+        max_entries=100000
+    )
     yield result
 
     gc.collect()
     torch.cuda.empty_cache()
 
     result.after_profile.measure()
+    from vllm.distributed.parallel_state import get_world_group
+    rank = get_world_group().rank()
+    torch.cuda.memory._dump_snapshot(f"memory_snapshot_rank_{rank}.pickle")
 
     diff = result.after_profile - result.before_profile
     result.torch_peak_increase_in_bytes = diff.torch_peak_in_bytes
