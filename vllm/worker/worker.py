@@ -50,6 +50,16 @@ class Worker(LocalOrDistributedWorkerBase):
         model_runner_cls: Optional[Type[GPUModelRunnerBase]] = None,
     ) -> None:
         WorkerBase.__init__(self, vllm_config)
+        from vllm_test_utils import monitor
+        def measure_current_non_torch():
+            free, total = torch.cuda.mem_get_info()
+            current_used = total - free
+            current_torch = torch.cuda.memory_reserved()
+            current_non_torch = current_used - current_torch
+            return current_non_torch
+        self.monitor = monitor(measure_current_non_torch)
+        self.monitor_values = self.monitor.__enter__()
+
         self.parallel_config.rank = rank
         self.local_rank = local_rank
         self.rank = rank
@@ -292,6 +302,12 @@ class Worker(LocalOrDistributedWorkerBase):
         # Reset the seed to ensure that the random state is not affected by
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)
+        self.monitor.__exit__(None, None, None)
+        with open(f"tracing_non_torch_memory_for_rank_{self.rank}_in_tp_{self.vllm_config.parallel_config.world_size}.txt", "w") as f:
+            for value, stack in zip(self.monitor_values.values, \
+                    self.monitor_values.trace_stacks):
+                    f.write(f"non_torch memory changed to {value / 1024 / 1024} MiB in\n")
+                    f.write(stack + "\n")
 
     @property
     def do_metadata_broadcast(self) -> bool:
