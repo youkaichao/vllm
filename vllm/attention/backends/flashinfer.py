@@ -495,6 +495,11 @@ class FlashInferMetadataBuilder(AttentionMetadataBuilder[FlashInferMetadata]):
         self.sliding_window = input_builder.sliding_window
         self.block_size = input_builder.block_size
 
+        from vllm.config import get_current_vllm_config
+        vllm_config = get_current_vllm_config()
+        hf_config = vllm_config.model_config.hf_config
+        print(hf_config)
+
     def prepare(self):
         self.slot_mapping: List[int] = []
         self.prefill_seq_lens: List[int] = []
