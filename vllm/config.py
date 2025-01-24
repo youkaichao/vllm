@@ -2964,8 +2964,17 @@ class CompilationConfig(BaseModel):
             self.max_capture_size] = self.max_capture_size
 
 
+# Define a metaclass and assign `my_new_function` as its __new__
+class CustomMeta(type):
+
+    def __new__(cls, name, bases, dct):
+        import traceback
+        traceback.print_stack()
+        return super().__new__(cls, name, bases, dct)
+
+
 @dataclass
-class VllmConfig:
+class VllmConfig(metaclass=CustomMeta):
     """Dataclass which contains all vllm-related configuration. This
     simplifies passing around the distinct configurations in the codebase.
     """
